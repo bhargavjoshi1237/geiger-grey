@@ -29,17 +29,18 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { getUser } from "@/lib/supabase/user";
+import { Button } from "@/components/ui/button";
 
 const surfaceStyle = {
-  backgroundColor: "#1a1a1a",
-  borderColor: "#2a2a2a",
-  color: "#ffffff",
+  backgroundColor: "var(--surface-dialog)",
+  borderColor: "var(--border)",
+  color: "var(--foreground)",
 };
 
 const itemBaseStyle =
   "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm cursor-default transition-colors outline-none";
 
-const itemHoverStyle = "hover:bg-[#242424] focus:bg-[#242424] text-[#a3a3a3] hover:text-white focus:text-white";
+const itemHoverStyle = "hover:bg-surface-active focus:bg-surface-active text-muted-foreground hover:text-foreground focus:text-foreground";
 
 export function ProfileDropdown({ children }) {
   const [user, setUser] = useState(null);
@@ -68,7 +69,7 @@ export function ProfileDropdown({ children }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {children || (
-          <button className="w-8 h-8 rounded-full border border-[#333333] hover:border-[#474747] overflow-hidden ml-1 transition-colors">
+          <Button className="w-8 h-8 rounded-full border border-border hover:border-border-strong overflow-hidden ml-1 transition-colors">
             <Avatar className="size-full">
               {pfpUrl && (
                 <AvatarImage src={pfpUrl} alt={displayName} />
@@ -77,7 +78,7 @@ export function ProfileDropdown({ children }) {
                 {initials}
               </AvatarFallback>
             </Avatar>
-          </button>
+          </Button>
         )}
       </DropdownMenuTrigger>
 
@@ -90,7 +91,7 @@ export function ProfileDropdown({ children }) {
         <div className="p-4 pb-3">
           <DropdownMenuLabel className="p-0">
             <div className="flex items-center gap-3">
-              <Avatar className="size-10 border border-[#333333]">
+              <Avatar className="size-10 border border-border">
                 {pfpUrl && (
                   <AvatarImage src={pfpUrl} alt={displayName} />
                 )}
@@ -99,10 +100,10 @@ export function ProfileDropdown({ children }) {
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-sm font-semibold text-white truncate">
+                <span className="text-sm font-semibold text-foreground truncate">
                   {displayName}
                 </span>
-                <span className="text-xs text-[#a3a3a3] truncate">
+                <span className="text-xs text-muted-foreground truncate">
                   {displayEmail}
                 </span>
               </div>
@@ -110,33 +111,33 @@ export function ProfileDropdown({ children }) {
           </DropdownMenuLabel>
         </div>
 
-        <DropdownMenuSeparator className="bg-[#2a2a2a] mx-0" />
+        <DropdownMenuSeparator className="bg-surface-hover mx-0" />
 
         <div className="p-1.5">
           <DropdownMenuGroup>
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <CircleUserRound className="size-4 text-[#a3a3a3]" />
+              <CircleUserRound className="size-4 text-muted-foreground" />
               <span>Profile</span>
             </DropdownMenuItem>
 
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <UsersRound className="size-4 text-[#a3a3a3]" />
+              <UsersRound className="size-4 text-muted-foreground" />
               <span>Organization Settings</span>
             </DropdownMenuItem>
 
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <Wallet className="size-4 text-[#a3a3a3]" />
+              <Wallet className="size-4 text-muted-foreground" />
               <span>Billing & Plans</span>
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
-          <DropdownMenuSeparator className="bg-[#2a2a2a] my-1" />
+          <DropdownMenuSeparator className="bg-surface-hover my-1" />
 
           <DropdownMenuGroup>
             <DropdownMenuItem className="hover:bg-transparent focus:bg-transparent p-2 cursor-default">
@@ -144,17 +145,17 @@ export function ProfileDropdown({ children }) {
                 type="single"
                 value={theme}
                 onValueChange={(value) => { if (value) setTheme(value); }}
-                className="bg-[#111111] flex items-center justify-evenly rounded-lg p-0.5 w-full"
+                className="bg-background flex items-center justify-evenly rounded-lg p-0.5 w-full"
               >
                 <ToggleGroupItem
                   value="light"
-                  className="data-[state=on]:bg-[#242424] data-[state=on]:text-white text-[#a3a3a3] rounded-md hover:bg-[#1f1f1f] hover:text-white px-3 h-7 text-xs gap-1.5 flex-1 justify-center"
+                  className="data-[state=on]:bg-surface-active data-[state=on]:text-foreground text-muted-foreground rounded-md hover:bg-surface-card hover:text-foreground px-3 h-7 text-xs gap-1.5 flex-1 justify-center"
                 >
                   <Sun className="size-3.5" />
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="dark"
-                  className="data-[state=on]:bg-[#242424] data-[state=on]:text-white text-[#a3a3a3] rounded-md hover:bg-[#1f1f1f] hover:text-white px-3 h-7 text-xs gap-1.5 flex-1 justify-center"
+                  className="data-[state=on]:bg-surface-active data-[state=on]:text-foreground text-muted-foreground rounded-md hover:bg-surface-card hover:text-foreground px-3 h-7 text-xs gap-1.5 flex-1 justify-center"
                 >
                   <Moon className="size-3.5" />
                 </ToggleGroupItem>
@@ -164,44 +165,44 @@ export function ProfileDropdown({ children }) {
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <Settings className="size-4 text-[#a3a3a3]" />
+              <Settings className="size-4 text-muted-foreground" />
               <span>Settings</span>
             </DropdownMenuItem>
 
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <ShieldCheck className="size-4 text-[#a3a3a3]" />
+              <ShieldCheck className="size-4 text-muted-foreground" />
               <span>Security</span>
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
-          <DropdownMenuSeparator className="bg-[#2a2a2a] my-1" />
+          <DropdownMenuSeparator className="bg-surface-hover my-1" />
 
           <DropdownMenuGroup>
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <BookMarked className="size-4 text-[#a3a3a3]" />
+              <BookMarked className="size-4 text-muted-foreground" />
               <span>Documentation</span>
-              <ExternalLink className="size-3 ml-auto text-[#737373]" />
+              <ExternalLink className="size-3 ml-auto text-text-secondary" />
             </DropdownMenuItem>
 
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <MessageCircle className="size-4 text-[#a3a3a3]" />
+              <MessageCircle className="size-4 text-muted-foreground" />
               <span>Send Feedback</span>
             </DropdownMenuItem>
 
             <DropdownMenuItem
               className={`${itemBaseStyle} ${itemHoverStyle}`}
             >
-              <LifeBuoy className="size-4 text-[#a3a3a3]" />
+              <LifeBuoy className="size-4 text-muted-foreground" />
               <span>Help & Support</span>
             </DropdownMenuItem>
             <DropdownMenuItem
-              className={`${itemBaseStyle} hover:bg-[#2a1a1a] focus:bg-[#2a1a1a] text-[#a3a3a3] hover:text-red-400 focus:text-red-400 group`}
+              className={`${itemBaseStyle} hover:bg-destructive/10 focus:bg-destructive/10 text-muted-foreground hover:text-destructive focus:text-destructive group`}
             >
               <LogOut className="size-4 group-hover:text-red-400" />
               <span>Sign out</span>
@@ -209,8 +210,8 @@ export function ProfileDropdown({ children }) {
           </DropdownMenuGroup>
         </div>
 
-        <div className="px-4 py-2.5 border-t border-[#2a2a2a]">
-          <div className="flex items-center justify-between text-[11px] text-[#737373]">
+        <div className="px-4 py-2.5 border-t border-border">
+          <div className="flex items-center justify-between text-[11px] text-text-secondary">
             <span>Grey v1.0.0</span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>

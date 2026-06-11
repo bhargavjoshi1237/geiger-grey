@@ -60,15 +60,15 @@ export function DeadlinesSection() {
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-[#e7e7e7] tracking-tight leading-tight">
+            <h2 className="text-lg font-semibold text-foreground tracking-tight leading-tight">
               Upcoming Deadlines
             </h2>
-            <p className="text-xs text-[#737373]">
+            <p className="text-xs text-text-secondary">
               Tasks requiring immediate attention
             </p>
           </div>
         </div>
-        <button className="text-xs font-medium text-[#737373] hover:text-[#e7e7e7] px-3 py-1.5 rounded-lg transition-colors hover:border-[#474747] flex items-center gap-2">
+        <button className="text-xs font-medium text-text-secondary hover:text-foreground px-3 py-1.5 rounded-lg transition-colors hover:border-border-strong flex items-center gap-2">
           View Schedule <ChevronRight className="w-3 h-3" />
         </button>
       </div>
@@ -77,7 +77,7 @@ export function DeadlinesSection() {
         {deadlines.map((deadline) => (
           <Card
             key={deadline.id}
-            className="bg-[#202020] border-[#2a2a2a] hover:border-[#474747] transition-colors flex flex-col justify-between py-0 gap-0"
+            className="bg-surface-card border-border hover:border-border-strong transition-colors flex flex-col justify-between py-0 gap-0"
           >
             <CardHeader className="p-5 pb-0 space-y-4">
               <div className="flex items-center justify-between">
@@ -91,32 +91,32 @@ export function DeadlinesSection() {
                 >
                   {deadline.priority} Priority
                 </span>
-                <span className="text-sm font-medium text-[#a3a3a3]">
+                <span className="text-sm font-medium text-muted-foreground">
                   {deadline.progress}%
                 </span>
               </div>
-              <CardTitle className="text-[#e7e7e7] font-medium text-base">
+              <CardTitle className="text-foreground font-medium text-base">
                 {deadline.title}
               </CardTitle>
             </CardHeader>
 
             <CardContent className="p-5 pt-4 space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-[#737373]">
+                <div className="flex items-center gap-2 text-text-secondary">
                   <Clock className="w-3.5 h-3.5" />
                   <span>Time Left</span>
                 </div>
-                <span className="text-[#e7e7e7]">{deadline.remaining}</span>
+                <span className="text-foreground">{deadline.remaining}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-[#737373]">
+                <div className="flex items-center gap-2 text-text-secondary">
                   <Calendar className="w-3.5 h-3.5" />
                   <span>Due Date</span>
                 </div>
-                <span className="text-[#e7e7e7]">{deadline.date}</span>
+                <span className="text-foreground">{deadline.date}</span>
               </div>
 
-              <div className="w-full h-1 bg-[#161616] rounded-full mt-4 overflow-hidden border border-[#2a2a2a]">
+              <div className="w-full h-1 bg-background rounded-full mt-4 overflow-hidden border border-border">
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{
@@ -127,18 +127,18 @@ export function DeadlinesSection() {
               </div>
             </CardContent>
 
-            <CardFooter className="p-5 pt-4 border-t border-[#2a2a2a] flex items-center justify-between">
+            <CardFooter className="p-5 pt-4 border-t border-border flex items-center justify-between">
               <div className="flex -space-x-2">
                 {users.map((user) => (
-                  <Avatar key={user.id} className="w-6 h-6 border-2 border-[#202020]">
+                  <Avatar key={user.id} className="w-6 h-6 border-2 border-surface-card">
                     <AvatarImage src={user.src} alt={user.name} />
-                    <AvatarFallback className="text-[9px] bg-[#333333] text-[#a3a3a3]">
+                    <AvatarFallback className="text-[9px] bg-surface-strong text-muted-foreground">
                       {user.name.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
                 ))}
               </div>
-              <button className="text-[11px] font-medium text-[#737373] hover:text-[#e7e7e7] transition-colors">
+              <button className="text-[11px] font-medium text-text-secondary hover:text-foreground transition-colors">
                 Open Task
               </button>
             </CardFooter>

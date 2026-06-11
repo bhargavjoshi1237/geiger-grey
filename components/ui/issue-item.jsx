@@ -87,7 +87,7 @@ function IssueItem({
       <SheetTrigger asChild>
         <div
           className={cn(
-            "flex items-center justify-between gap-4 p-3 rounded-lg bg-[#161616] border border-[#2a2a2a] hover:border-[#474747] transition-colors cursor-pointer",
+            "flex items-center justify-between gap-4 p-3 rounded-lg bg-background border border-border hover:border-border-strong transition-colors cursor-pointer",
             className
           )}
           {...props}
@@ -97,11 +97,11 @@ function IssueItem({
               {statusIcons[status] || statusIcons.open}
             </div>
             <div className="min-w-0">
-              <p className="text-sm text-[#e7e7e7] font-medium truncate">
+              <p className="text-sm text-foreground font-medium truncate">
                 {title}
               </p>
               {assignee && (
-                <p className="text-xs text-[#737373] truncate">
+                <p className="text-xs text-text-secondary truncate">
                   {assignee}
                 </p>
               )}
@@ -109,7 +109,7 @@ function IssueItem({
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {dueDate && (
-              <span className="text-xs text-[#737373] hidden sm:inline">
+              <span className="text-xs text-text-secondary hidden sm:inline">
                 {dueDate}
               </span>
             )}

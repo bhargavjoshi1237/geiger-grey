@@ -34,10 +34,10 @@ export default function LightPallet() {
           <div className="space-y-4 border-b border-[#e5e5e5] pb-8 pt-6">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f3f4f6] border border-[#e5e5e5] mb-4">
                <div className="w-2 h-2 rounded-full bg-[#171717]"></div>
-               <span className="text-xs font-medium text-[#525252]">Design System</span>
+               <span className="text-xs font-medium text-text-tertiary">Design System</span>
             </div>
             <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-[#171717]">Light Mode Theme Palette</h1>
-            <p className="text-[#525252] text-lg max-w-2xl leading-relaxed">
+            <p className="text-text-tertiary text-lg max-w-2xl leading-relaxed">
               A clean, minimal light theme built on progressive shades of gray. Use these surfaces and text tones for interfaces that feel airy, readable, and professional.
             </p>
           </div>
@@ -45,10 +45,10 @@ export default function LightPallet() {
           <section className="space-y-6">
             <div className="space-y-1">
               <h2 className="text-xl font-medium text-[#171717] flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#a3a3a3]"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="9" x2="9" y1="21" y2="9"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="9" x2="9" y1="21" y2="9"/></svg>
                 Surfaces & Borders
               </h2>
-              <p className="text-[#525252] text-sm">Progressive shades from base app background to highest elevation</p>
+              <p className="text-text-tertiary text-sm">Progressive shades from base app background to highest elevation</p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {surfaceColors.map((color) => (
@@ -63,7 +63,7 @@ export default function LightPallet() {
                       <span className="text-[#171717] font-medium">{color.hex}</span>
                     </div>
                     <h3 className="text-sm font-medium text-[#171717] mb-1">{color.name}</h3>
-                    <p className="text-xs text-[#a3a3a3] leading-relaxed line-clamp-2">{color.desc}</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{color.desc}</p>
                   </div>
                 </div>
               ))}
@@ -73,10 +73,10 @@ export default function LightPallet() {
           <section className="space-y-6">
             <div className="space-y-1">
               <h2 className="text-xl font-medium text-[#171717] flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#a3a3a3]"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
                 Typography
               </h2>
-              <p className="text-[#525252] text-sm">Text colors tailored for legibility on light backgrounds</p>
+              <p className="text-text-tertiary text-sm">Text colors tailored for legibility on light backgrounds</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {textColors.map((color) => (
@@ -90,9 +90,9 @@ export default function LightPallet() {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="text-sm font-medium text-[#171717]">{color.name}</h3>
-                      <span className="text-xs font-mono text-[#525252] bg-[#e5e7eb] px-1.5 py-0.5 rounded">{color.hex}</span>
+                      <span className="text-xs font-mono text-text-tertiary bg-[#e5e7eb] px-1.5 py-0.5 rounded">{color.hex}</span>
                     </div>
-                    <p className="text-xs text-[#a3a3a3]">{color.desc}</p>
+                    <p className="text-xs text-muted-foreground">{color.desc}</p>
                   </div>
                 </div>
               ))}
@@ -102,10 +102,10 @@ export default function LightPallet() {
           <section className="space-y-6">
             <div className="space-y-1">
               <h2 className="text-xl font-medium text-[#171717] flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#a3a3a3]"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/></svg>
                 Accent Colors
               </h2>
-              <p className="text-[#525252] text-sm">Semantic colors for actions, statuses, and interactive elements</p>
+              <p className="text-text-tertiary text-sm">Semantic colors for actions, statuses, and interactive elements</p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               {accentColors.map((color) => (
@@ -116,8 +116,8 @@ export default function LightPallet() {
                   />
                   <div className="text-center">
                     <h3 className="text-sm font-medium text-[#171717]">{color.name}</h3>
-                    <span className="text-xs font-mono text-[#a3a3a3]">{color.hex}</span>
-                    <p className="text-xs text-[#a3a3a3] mt-1">{color.desc}</p>
+                    <span className="text-xs font-mono text-muted-foreground">{color.hex}</span>
+                    <p className="text-xs text-muted-foreground mt-1">{color.desc}</p>
                   </div>
                 </div>
               ))}
@@ -127,10 +127,10 @@ export default function LightPallet() {
           <section className="space-y-6">
             <div className="space-y-1">
               <h2 className="text-xl font-medium text-[#171717] flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#a3a3a3]"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
                 UI Example Application
               </h2>
-              <p className="text-[#525252] text-sm">How these colors come together to build coherent interfaces</p>
+              <p className="text-text-tertiary text-sm">How these colors come together to build coherent interfaces</p>
             </div>
             
             <div className="relative rounded-2xl border border-[#e5e5e5] bg-[#f9fafb] overflow-hidden">
@@ -140,12 +140,12 @@ export default function LightPallet() {
                 <div className="w-full max-w-lg bg-white border border-[#e5e5e5] rounded-xl overflow-hidden shadow-lg flex flex-col">
                   <div className="px-5 py-4 border-b border-[#e5e5e5] bg-white flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-md bg-[#f3f4f6] border border-[#e5e5e5] flex items-center justify-center text-[#525252]">
+                      <div className="w-8 h-8 rounded-md bg-[#f3f4f6] border border-[#e5e5e5] flex items-center justify-center text-text-tertiary">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                       </div>
                       <div>
                         <h3 className="text-[#171717] font-medium text-sm">Application Settings</h3>
-                        <p className="text-xs text-[#525252]">Manage core configuration</p>
+                        <p className="text-xs text-text-tertiary">Manage core configuration</p>
                       </div>
                     </div>
                   </div>
@@ -155,7 +155,7 @@ export default function LightPallet() {
                       <label className="text-sm font-medium text-[#171717]">Framework Name</label>
                       <Input 
                         defaultValue="geiger-flow"
-                        className="bg-white border-[#e5e5e5] text-[#171717] placeholder:text-[#a3a3a3] focus-visible:ring-0 focus-visible:border-[#d4d4d4]"
+                        className="bg-white border-[#e5e5e5] text-[#171717] placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:border-[#d4d4d4]"
                       />
                     </div>
                     
@@ -167,21 +167,21 @@ export default function LightPallet() {
                             <div className="w-2 h-2 rounded-full bg-green-500"></div>
                             <span className="text-sm text-[#171717] font-medium">Production</span>
                           </div>
-                          <span className="text-xs text-[#a3a3a3] font-mono">v2.4.1</span>
+                          <span className="text-xs text-muted-foreground font-mono">v2.4.1</span>
                         </div>
                         <div className="flex items-center justify-between p-3 hover:bg-[#f3f4f6] transition-colors cursor-pointer">
                           <div className="flex items-center gap-3">
                             <div className="w-2 h-2 rounded-full bg-[#d4d4d4]"></div>
-                            <span className="text-sm text-[#525252]">Staging</span>
+                            <span className="text-sm text-text-tertiary">Staging</span>
                           </div>
-                          <span className="text-xs text-[#a3a3a3] font-mono">v2.4.2-beta</span>
+                          <span className="text-xs text-muted-foreground font-mono">v2.4.2-beta</span>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="px-5 py-4 border-t border-[#e5e5e5] bg-white flex items-center justify-between mt-auto">
-                    <button className="text-sm font-medium text-[#525252] hover:text-[#171717] transition-colors duration-200 px-3 py-2">
+                    <button className="text-sm font-medium text-text-tertiary hover:text-[#171717] transition-colors duration-200 px-3 py-2">
                       Cancel
                     </button>
                     <button className="bg-[#171717] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#262626] transition-colors duration-200 flex items-center gap-2">

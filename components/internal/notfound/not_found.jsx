@@ -15,7 +15,7 @@ export function EmptyState({
 }) {
   return (
     <div className={cn(
-      "flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-dashed border-[#2a2a2a] bg-[#121212]/50",
+      "flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-dashed border-border bg-background/50",
       className
     )}>
       {icon && (
@@ -24,20 +24,20 @@ export function EmptyState({
         </div>
       )}
       
-      <h3 className="text-xl font-semibold text-[#e7e7e7] mb-2">
+      <h3 className="text-xl font-semibold text-foreground mb-2">
         {title}
       </h3>
       
-      <p className="text-[#a3a3a3] text-base mb-8 max-w-sm">
+      <p className="text-muted-foreground text-base mb-8 max-w-sm">
         {description}
       </p>
 
       {actionLabel && (
         <Button 
           onClick={onAction}
-          className="bg-[#e7e7e7] hover:bg-zinc-200 text-black px-3 py-3 rounded-xl text-md font-medium flex items-center gap-2 transition-colors"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-3 rounded-xl text-md font-medium flex items-center gap-2 transition-colors"
         >
-          <Plus className="w-5 h-5 text-black font-bold stroke-[3]" />
+          <Plus className="w-5 h-5 text-primary-foreground font-bold stroke-[3]" />
           {actionLabel}
         </Button>
       )}

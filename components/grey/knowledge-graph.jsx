@@ -349,7 +349,7 @@ export function KnowledgeGraph({ projectId, user }) {
   );
 
   return (
-    <main className="relative flex h-full min-h-0 w-full overflow-hidden bg-[#161616]">
+    <main className="relative flex h-full min-h-0 w-full overflow-hidden bg-background">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-10 opacity-70"
@@ -364,13 +364,13 @@ export function KnowledgeGraph({ projectId, user }) {
       <button
         type="button"
         onClick={resetView}
-        className="absolute right-4 top-4 z-20 rounded-md border border-[#333333] bg-[#1a1a1a]/95 p-2 text-[#a3a3a3] shadow-xl backdrop-blur transition-colors hover:bg-[#242424] hover:text-white"
+        className="absolute right-4 top-4 z-20 rounded-md border border-border bg-surface-subtle/95 p-2 text-muted-foreground shadow-xl backdrop-blur transition-colors hover:bg-surface-active hover:text-foreground"
         title="Fit graph"
       >
         <Maximize2 className="h-4 w-4" />
       </button>
 
-      <div className="absolute left-4 top-4 z-20 flex overflow-hidden rounded-lg border border-[#2a2a2a] bg-[#1a1a1a]/95 shadow-xl backdrop-blur">
+      <div className="absolute left-4 top-4 z-20 flex overflow-hidden rounded-lg border border-border bg-surface-subtle/95 shadow-xl backdrop-blur">
         {["2d", "3d"].map((mode) => (
           <button
             key={mode}
@@ -378,9 +378,9 @@ export function KnowledgeGraph({ projectId, user }) {
             onClick={() => setGraphMode(mode)}
             className={`px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${
               graphMode === mode
-                ? "bg-[#2a2a2a] text-white"
-                : "text-[#737373] hover:bg-[#202020] hover:text-[#e7e7e7]"
-            } ${mode === "3d" ? "border-l border-[#2a2a2a]" : ""}`}
+                ? "bg-surface-hover text-white"
+                : "text-text-secondary hover:bg-surface-card hover:text-foreground"
+            } ${mode === "3d" ? "border-l border-border" : ""}`}
           >
             {mode}
           </button>
@@ -388,14 +388,14 @@ export function KnowledgeGraph({ projectId, user }) {
       </div>
 
       <aside
-        className={`absolute bottom-4 right-4 z-20 overflow-hidden rounded-lg border border-[#2a2a2a] bg-[#1a1a1a]/95 shadow-2xl backdrop-blur ${
+        className={`absolute bottom-4 right-4 z-20 overflow-hidden rounded-lg border border-border bg-surface-subtle/95 shadow-2xl backdrop-blur ${
           forcesOpen ? "w-80" : "w-auto"
         }`}
       >
         <button
           type="button"
           onClick={() => setForcesOpen((open) => !open)}
-          className={`flex w-full items-center justify-between text-left transition-colors hover:bg-[#202020] ${
+          className={`flex w-full items-center justify-between text-left transition-colors hover:bg-surface-card ${
             forcesOpen ? "p-4" : "p-2.5"
           }`}
           aria-expanded={forcesOpen}
@@ -404,23 +404,23 @@ export function KnowledgeGraph({ projectId, user }) {
           {forcesOpen ? (
             <>
               <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                <Settings2 className="h-4 w-4 text-[#a3a3a3]" />
+                <Settings2 className="h-4 w-4 text-muted-foreground" />
                 Graph forces
               </span>
-              <ChevronDown className="h-4 w-4 rotate-180 text-[#a3a3a3] transition-transform" />
+              <ChevronDown className="h-4 w-4 rotate-180 text-muted-foreground transition-transform" />
             </>
           ) : (
-            <Settings2 className="h-4 w-4 text-[#a3a3a3]" />
+            <Settings2 className="h-4 w-4 text-muted-foreground" />
           )}
         </button>
 
         {forcesOpen && (
-          <div className="border-t border-[#2a2a2a] p-4">
+          <div className="border-t border-border p-4">
             <div className="mb-4 flex justify-end">
               <button
                 type="button"
                 onClick={() => setForces(DEFAULT_FORCES)}
-                className="rounded-md p-1.5 text-[#737373] hover:bg-[#242424] hover:text-white"
+                className="rounded-md p-1.5 text-text-secondary hover:bg-surface-active hover:text-foreground"
                 title="Restore force defaults"
               >
                 <RotateCcw className="h-4 w-4" />
@@ -433,10 +433,10 @@ export function KnowledgeGraph({ projectId, user }) {
               ["Link force", "link", 0.02, 0.8, 0.01],
               ["Link distance", "distance", 45, 220, 1],
             ].map(([label, key, min, max, step]) => (
-              <label key={key} className="mb-3 block text-xs text-[#a3a3a3]">
+              <label key={key} className="mb-3 block text-xs text-muted-foreground">
                 <div className="mb-1 flex justify-between">
                   <span>{label}</span>
-                  <span className="text-[#737373]">{Number(forces[key]).toFixed(key === "distance" || key === "repel" ? 0 : 3)}</span>
+                  <span className="text-text-secondary">{Number(forces[key]).toFixed(key === "distance" || key === "repel" ? 0 : 3)}</span>
                 </div>
                 <input
                   type="range"
@@ -451,12 +451,12 @@ export function KnowledgeGraph({ projectId, user }) {
             ))}
 
             {selectedNode && (
-              <div className="mt-4 rounded-md border border-[#2a2a2a] bg-[#161616] p-3">
+              <div className="mt-4 rounded-md border border-border bg-background p-3">
                 <div className="text-sm font-semibold text-white">{selectedNode.label}</div>
-                <div className="mt-1 text-xs text-[#a3a3a3]">{selectedNode.group}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{selectedNode.group}</div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {selectedNode.tags?.map((tag) => (
-                    <span key={tag} className="rounded border border-[#333333] bg-[#202020] px-2 py-1 text-[11px] text-[#a3a3a3]">
+                    <span key={tag} className="rounded border border-border bg-surface-card px-2 py-1 text-[11px] text-muted-foreground">
                       {tag}
                     </span>
                   ))}
@@ -467,11 +467,11 @@ export function KnowledgeGraph({ projectId, user }) {
         )}
       </aside>
 
-      <div className="absolute bottom-4 left-4 z-20 flex overflow-hidden rounded-lg border border-[#2a2a2a] bg-[#1a1a1a]/95 shadow-xl">
-        <button type="button" onClick={() => zoomBy(0.18)} className="p-2.5 text-[#a3a3a3] hover:bg-[#242424] hover:text-white">
+      <div className="absolute bottom-4 left-4 z-20 flex overflow-hidden rounded-lg border border-border bg-surface-subtle/95 shadow-xl">
+        <button type="button" onClick={() => zoomBy(0.18)} className="p-2.5 text-muted-foreground hover:bg-surface-active hover:text-foreground">
           <Plus className="h-4 w-4" />
         </button>
-        <button type="button" onClick={() => zoomBy(-0.18)} className="border-l border-[#2a2a2a] p-2.5 text-[#a3a3a3] hover:bg-[#242424] hover:text-white">
+        <button type="button" onClick={() => zoomBy(-0.18)} className="border-l border-border p-2.5 text-muted-foreground hover:bg-surface-active hover:text-foreground">
           <Minus className="h-4 w-4" />
         </button>
       </div>

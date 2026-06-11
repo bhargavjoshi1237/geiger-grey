@@ -75,30 +75,30 @@ export function NotificationsDropdown({ children }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {children || (
-          <button className="w-8 h-8 rounded-full border border-transparent hover:bg-[#2a2a2a] flex items-center justify-center transition-colors text-[#a3a3a3] hover:text-white relative">
+          <button className="w-8 h-8 rounded-full border border-transparent hover:bg-surface-hover flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground relative">
             <Bell className="w-[18px] h-[18px]" strokeWidth={2} />
           </button>
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="mt-1 w-[380px] p-0 bg-[#141414] border border-[#1f1f1f] rounded-2xl overflow-hidden  scrollbar-hide"
+        className="mt-1 w-[380px] p-0 bg-surface-dialog border border-border rounded-2xl overflow-hidden  scrollbar-hide"
       >
-        <div className="px-5 pt-5 pb-4 flex flex-col gap-4 border-b border-[#1f1f1f]">
+        <div className="px-5 pt-5 pb-4 flex flex-col gap-4 border-b border-border">
           <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold text-white">
+            <h2 className="text-[15px] font-semibold text-foreground">
               Notifications
             </h2>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1 bg-[#1a1a1a] w-full justify-center rounded-lg p-1 border border-[#2a2a2a]">
+            <div className="flex items-center gap-1 bg-surface-subtle w-full justify-center rounded-lg p-1 border border-border">
               <button
                 onClick={() => setActiveTab("all")}
                 className={`px-4 py-1.5 text-sm w-full font-medium rounded-md transition-all ${
                   activeTab === "all"
-                    ? "bg-[#2a2a2a] text-[#e7e7e7] shadow-sm"
-                    : "text-[#737373] hover:text-[#e7e7e7] hover:bg-[#202020]"
+                    ? "bg-surface-hover text-foreground shadow-sm"
+                    : "text-text-secondary hover:text-foreground hover:bg-surface-card"
                 }`}
               >
                 All
@@ -109,8 +109,8 @@ export function NotificationsDropdown({ children }) {
                   onClick={() => setActiveTab(tab.toLowerCase())}
                   className={`px-4 py-1.5 text-sm w-full font-medium rounded-md transition-all ${
                     activeTab === tab.toLowerCase()
-                      ? "bg-[#2a2a2a] text-[#e7e7e7] shadow-sm"
-                      : "text-[#737373] hover:text-[#e7e7e7] hover:bg-[#202020]"
+                      ? "bg-surface-hover text-foreground shadow-sm"
+                      : "text-text-secondary hover:text-foreground hover:bg-surface-card"
                   }`}
                 >
                   {tab}
@@ -122,7 +122,7 @@ export function NotificationsDropdown({ children }) {
 
         <div className="max-h-[420px] overflow-y-auto pb-2 custom-scrollbar">
           {filteredNotifications.length === 0 ? (
-            <div className="px-4 py-12 text-center text-[13px] text-[#666666]">
+            <div className="px-4 py-12 text-center text-[13px] text-text-secondary">
               No notifications found.
             </div>
           ) : (
@@ -151,16 +151,16 @@ export function NotificationsDropdown({ children }) {
               } catch (e) {}
 
               const isUnread = !notification.read;
-              const bgColor = notification.bg_color || notification.bgColor || "bg-[#1f1f1f]";
-              const iconColor = notification.icon_color || notification.iconColor || "text-[#666666]";
+              const bgColor = notification.bg_color || notification.bgColor || "bg-surface-card";
+              const iconColor = notification.icon_color || notification.iconColor || "text-text-secondary";
 
               return (
                 <div
                   key={notification.id}
                   className={`px-4 py-3.5 transition-colors relative group cursor-pointer border-b border-[#1a1a1a] last:border-b-0 ${
                     isUnread
-                      ? "bg-[#1a1a1a]/50 hover:bg-[#1f1f1f]"
-                      : "hover:bg-[#181818]"
+                      ? "bg-surface-subtle/50 hover:bg-surface-card"
+                      : "hover:bg-surface-card"
                   }`}
                 >
                   {isUnread && (
@@ -181,18 +181,18 @@ export function NotificationsDropdown({ children }) {
                       <div className="flex items-center justify-between gap-3 mb-1">
                         <h3
                           className={`text-[13px] font-medium truncate ${
-                            isUnread ? "text-white" : "text-[#c0c0c0]"
+                            isUnread ? "text-foreground" : "text-muted-foreground"
                           }`}
                         >
                           {notification.title}
                         </h3>
-                        <span className="text-[11px] text-[#555555] whitespace-nowrap shrink-0">
+                        <span className="text-[11px] text-text-tertiary whitespace-nowrap shrink-0">
                           {formattedTime}
                         </span>
                       </div>
                       <p
                         className={`text-[12px] leading-relaxed ${
-                          isUnread ? "text-[#a0a0a0]" : "text-[#707070]"
+                          isUnread ? "text-muted-foreground" : "text-text-secondary"
                         } line-clamp-2`}
                       >
                         {notification.description}
@@ -201,32 +201,32 @@ export function NotificationsDropdown({ children }) {
                       {extraContent && (
                         <div className="mt-3">
                       {extraContent.type === "comment" && (
-                            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 text-[12px] text-[#909090] leading-relaxed">
+                            <div className="bg-surface-subtle border border-border rounded-lg p-3 text-[12px] text-muted-foreground leading-relaxed">
                               {extraContent.text}
                             </div>
                           )}
 
                           {extraContent.type === "discussion" && (
-                            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 text-[12px] text-[#a3a3a3] leading-relaxed">
+                            <div className="bg-surface-subtle border border-border rounded-lg p-3 text-[12px] text-muted-foreground leading-relaxed">
                               <div className="flex items-center justify-between gap-2 mb-2">
-                                <span className="inline-flex items-center gap-1.5 text-[#ededed] font-medium">
+                                <span className="inline-flex items-center gap-1.5 text-foreground font-medium">
                                   <MessageSquare className="w-3.5 h-3.5 text-emerald-300" />
                                   {extraContent.channel}
                                 </span>
-                                <span className="text-[10px] text-[#737373]">
+                                <span className="text-[10px] text-text-secondary">
                                   {extraContent.replies} replies
                                 </span>
                               </div>
-                              <p className="text-[#d4d4d4]">{extraContent.message}</p>
+                              <p className="text-muted-foreground">{extraContent.message}</p>
                               <div className="mt-3 flex items-center justify-between gap-3">
-                                <span className="text-[11px] text-[#737373]">
+                                <span className="text-[11px] text-text-secondary">
                                   Started by {extraContent.author}
                                 </span>
                                 <div className="flex -space-x-1">
                                   {extraContent.participants?.map((person) => (
                                     <span
                                       key={person}
-                                      className="flex h-5 w-5 items-center justify-center rounded-full border border-[#1a1a1a] bg-[#2a2a2a] text-[9px] font-semibold text-[#ededed]"
+                                      className="flex h-5 w-5 items-center justify-center rounded-full border border-[#1a1a1a] bg-surface-hover text-[9px] font-semibold text-foreground"
                                     >
                                       {person}
                                     </span>
@@ -240,24 +240,24 @@ export function NotificationsDropdown({ children }) {
                             extraContent.files?.map((f, i) => (
                               <div
                                 key={i}
-                                className="flex items-center justify-between p-2.5 border border-[#2a2a2a] rounded-lg bg-[#1a1a1a] mt-2"
+                                className="flex items-center justify-between p-2.5 border border-border rounded-lg bg-surface-subtle mt-2"
                               >
                                 <div className="flex items-center gap-2.5 overflow-hidden">
-                                  <div className="w-7 h-7 rounded flex items-center justify-center bg-[#222222] text-[#808080] text-[10px] font-medium">
+                                  <div className="w-7 h-7 rounded flex items-center justify-center bg-surface-card text-text-secondary text-[10px] font-medium">
                                     {f.name.split('.').pop().toUpperCase()}
                                   </div>
                                   <div className="min-w-0">
-                                    <div className="text-[12px] text-[#c0c0c0] truncate">
+                                    <div className="text-[12px] text-muted-foreground truncate">
                                       {f.name}
                                     </div>
-                                    <div className="text-[10px] text-[#666666]">
+                                    <div className="text-[10px] text-text-secondary">
                                       {f.size}
                                     </div>
                                   </div>
                                 </div>
                                 <button
                                   onClick={(e) => e.stopPropagation()}
-                                  className="w-8 h-8 rounded flex items-center justify-center text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors shrink-0"
+                                  className="w-8 h-8 rounded flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
                                 >
                                   <Download className="w-4 h-4" />
                                 </button>
@@ -268,13 +268,13 @@ export function NotificationsDropdown({ children }) {
                             <div className="flex items-center gap-2 mt-2.5">
                               <button
                                 onClick={(e) => e.stopPropagation()}
-                                className="px-3 py-1.5 rounded-lg border border-[#333333] text-[11px] font-medium text-[#909090] hover:bg-[#252525] hover:text-white transition-colors"
+                                className="px-3 py-1.5 rounded-lg border border-border text-[11px] font-medium text-muted-foreground hover:bg-surface-active hover:text-foreground transition-colors"
                               >
                                 {extraContent.options?.[0] || "Decline"}
                               </button>
                               <button
                                 onClick={(e) => e.stopPropagation()}
-                                className="px-3 py-1.5 rounded-lg bg-white text-[11px] font-medium text-black hover:bg-gray-200 transition-colors"
+                                className="px-3 py-1.5 rounded-lg bg-foreground text-[11px] font-medium text-black hover:bg-gray-200 transition-colors"
                               >
                                 {extraContent.options?.[1] || "Accept"}
                               </button>
@@ -284,7 +284,7 @@ export function NotificationsDropdown({ children }) {
                       )}
 
                       <div className="mt-3">
-                        <span className="text-[9px] uppercase font-semibold tracking-wider text-[#666666] bg-[#1f1f1f] px-2 py-1 rounded-md border border-[#2a2a2a]">
+                        <span className="text-[9px] uppercase font-semibold tracking-wider text-text-secondary bg-surface-card px-2 py-1 rounded-md border border-border">
                           {notification.type}
                         </span>
                       </div>

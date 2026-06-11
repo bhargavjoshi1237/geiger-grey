@@ -60,7 +60,7 @@ export function GlobalBanner() {
               <a
                 href={banner.link.url}
                 className={cn(
-                  "hover:text-white transition-colors underline underline-offset-4 font-bold flex items-center gap-1.5",
+                  "hover:text-foreground transition-colors underline underline-offset-4 font-bold flex items-center gap-1.5",
                   currentTheme.linkDecoration,
                 )}
                 target="_blank"
