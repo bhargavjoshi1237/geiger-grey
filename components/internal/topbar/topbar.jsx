@@ -41,7 +41,7 @@ export function Topbar() {
 
       <div className="flex justify-between gap-4 md:gap-8 sm:mr-2">
         <div className="flex items-center gap-2 sm:gap-3">
-          <button className="relative flex items-center bg-surface-active border border-border hover:border-border-strong transition-colors rounded-md h-8 px-2 sm:px-2.5 w-8 sm:w-[240px] justify-center sm:justify-start text-sm text-muted-foreground shadow-sm group">
+          <button className="relative hidden items-center bg-surface-active border border-border hover:border-border-strong transition-colors rounded-md h-8 px-2 sm:flex sm:px-2.5 w-8 sm:w-[240px] justify-center sm:justify-start text-sm text-muted-foreground shadow-sm group">
             <Search className="w-4 h-4 sm:mr-2 text-muted-foreground group-hover:text-foreground transition-colors" />
             <span className="hidden sm:inline-block text-muted-foreground group-hover:text-foreground transition-colors">
               Search...
@@ -63,7 +63,7 @@ export function Topbar() {
               <HelpCircle className="w-[18px] h-[18px]" strokeWidth={2} />
             </button>
             <NotificationsDropdown>
-              <button className="w-8 h-8 rounded-full border border-transparent hover:bg-surface-hover flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground relative">
+              <button className="w-8 h-8 rounded-full border border-transparent hover:bg-surface-hover hidden items-center justify-center transition-colors text-muted-foreground hover:text-foreground relative sm:flex">
                 <Bell className="w-[18px] h-[18px]" strokeWidth={2} />
                 </button>
             </NotificationsDropdown>
