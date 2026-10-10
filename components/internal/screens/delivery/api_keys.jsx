@@ -17,20 +17,13 @@ import { LoadingArea } from "@geiger/ui";
 import { Button } from "@geiger/ui/button";
 import { ActionMenu } from "@geiger/ui/action-menu";
 import { Badge } from "@geiger/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@geiger/ui/dialog";
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
 import { listApiKeys, createApiKey, revokeApiKey, deleteApiKey } from "@/lib/supabase/api_keys";
 import { listPipelines } from "@/lib/supabase/pipelines";
 
 import { CreateApiKeyDialog, RevealApiKeyDialog } from "./api_key_dialog";
+import { ConfirmDialog } from "./confirm_dialog";
 import { GatedAction } from "./gated_action";
 import {
   API_KEY_STATUS_MAP,
@@ -78,13 +71,13 @@ export function ApiKeysScreen() {
   }, [keys, search]);
 
   const handleCreate = async (input) => {
-    const result = await createApiKey(projectId, input);
-    if (!result?.record) {
-      toast.error("Couldn't create the API key.");
+    const { data, error } = await createApiKey(projectId, input);
+    if (error || !data?.record) {
+      toast.error(error || "Couldn't create the API key.");
       return false;
     }
-    setKeys((prev) => [result.record, ...prev]);
-    setReveal({ name: result.record.name, plainKey: result.key });
+    setKeys((prev) => [data.record, ...prev]);
+    setReveal({ name: data.record.name, plainKey: data.key });
     toast.success("API key created.");
     return true;
   };
@@ -264,59 +257,42 @@ export function ApiKeysScreen() {
         name={reveal?.name}
       />
 
-      <Dialog open={!!revokeTarget} onOpenChange={(o) => !o && setRevokeTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Revoke API Key</DialogTitle>
-            <DialogDescription>
-              Revoke{" "}
-              <span className="font-medium text-foreground">{revokeTarget?.name}</span>? Any
-              requests using this key will start failing immediately. This can&apos;t be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setRevokeTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-red-500/90 text-white hover:bg-red-500"
-              onClick={() => {
-                handleRevoke(revokeTarget);
-                setRevokeTarget(null);
-              }}
-            >
-              <Ban className="h-4 w-4" /> Revoke Key
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!revokeTarget}
+        onOpenChange={(o) => !o && setRevokeTarget(null)}
+        title="Revoke API Key"
+        description={
+          <>
+            Revoke <span className="font-medium text-foreground">{revokeTarget?.name}</span>?
+            Any requests using this key will start failing immediately. This can&apos;t be
+            undone.
+          </>
+        }
+        confirmLabel="Revoke Key"
+        icon={Ban}
+        onConfirm={() => {
+          handleRevoke(revokeTarget);
+          setRevokeTarget(null);
+        }}
+      />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete API Key</DialogTitle>
-            <DialogDescription>
-              Delete{" "}
-              <span className="font-medium text-foreground">{deleteTarget?.name}</span>{" "}
-              permanently from the list? This can&apos;t be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-red-500/90 text-white hover:bg-red-500"
-              onClick={() => {
-                handleDelete(deleteTarget);
-                setDeleteTarget(null);
-              }}
-            >
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete API Key"
+        description={
+          <>
+            Delete <span className="font-medium text-foreground">{deleteTarget?.name}</span>{" "}
+            permanently from the list? This can&apos;t be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        icon={Trash2}
+        onConfirm={() => {
+          handleDelete(deleteTarget);
+          setDeleteTarget(null);
+        }}
+      />
     </MainScreenWrapper>
   );
 }

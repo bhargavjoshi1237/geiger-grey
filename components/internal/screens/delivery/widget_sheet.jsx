@@ -141,7 +141,10 @@ export function WidgetSheet({ open, onOpenChange, pipelines, apiKeys, initial, o
       theme: draft.theme,
     });
     setSaving(false);
-    if (ok) onOpenChange(false);
+    // Editing closes as usual; creating stays open so the parent can swap
+    // `initial` to the new record and the embed snippet (which needs its id)
+    // appears right away instead of requiring a reopen.
+    if (ok && isEdit) onOpenChange(false);
   };
 
   return (

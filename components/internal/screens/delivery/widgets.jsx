@@ -16,14 +16,6 @@ import {
 import { LoadingArea } from "@geiger/ui";
 import { Button } from "@geiger/ui/button";
 import { ActionMenu } from "@geiger/ui/action-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@geiger/ui/dialog";
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
 import { listWidgets, createWidget, updateWidget, deleteWidget } from "@/lib/supabase/widgets";
@@ -31,6 +23,7 @@ import { listPipelines } from "@/lib/supabase/pipelines";
 import { listApiKeys } from "@/lib/supabase/api_keys";
 
 import { WidgetSheet } from "./widget_sheet";
+import { ConfirmDialog } from "./confirm_dialog";
 import { GatedAction } from "./gated_action";
 import { WIDGET_STATUS_MAP } from "./constants";
 
@@ -91,7 +84,10 @@ export function WidgetsScreen() {
       return false;
     }
     setWidgets((prev) => [created, ...prev]);
-    toast.success("Widget created — open it again to copy its embed snippet.");
+    // Switch the sheet into edit mode for the new record instead of closing it,
+    // so the embed snippet (which needs the widget's id) shows immediately.
+    setSheetState({ open: true, widget: created });
+    toast.success("Widget created.");
     return true;
   };
 
@@ -234,32 +230,24 @@ export function WidgetsScreen() {
         onSave={handleSave}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete Widget</DialogTitle>
-            <DialogDescription>
-              Delete <span className="font-medium text-foreground">{deleteTarget?.name}</span>?
-              The embed script will stop responding on any site using it. This can&apos;t be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-red-500/90 text-white hover:bg-red-500"
-              onClick={() => {
-                handleDelete(deleteTarget);
-                setDeleteTarget(null);
-              }}
-            >
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete Widget"
+        description={
+          <>
+            Delete <span className="font-medium text-foreground">{deleteTarget?.name}</span>?
+            The embed script will stop responding on any site using it. This can&apos;t be
+            undone.
+          </>
+        }
+        confirmLabel="Delete"
+        icon={Trash2}
+        onConfirm={() => {
+          handleDelete(deleteTarget);
+          setDeleteTarget(null);
+        }}
+      />
     </MainScreenWrapper>
   );
 }

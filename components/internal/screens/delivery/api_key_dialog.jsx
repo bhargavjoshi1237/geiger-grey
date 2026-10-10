@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { AlertTriangle, KeyRound, Loader2 } from "lucide-react";
-import { toast } from "sonner";
 
 import { Field } from "@/components/internal/shared/screen_kit";
 import { CopyBlock } from "@/components/internal/shared/copy_block";
@@ -29,17 +28,36 @@ const EMPTY_DRAFT = {
   expiresAt: "",
 };
 
+const NAME_MAX = 80;
+const RATE_MIN = 1;
+const RATE_MAX = 10000;
+
+// Tomorrow as a yyyy-mm-dd string — the server rejects an expiry that isn't
+// strictly in the future, so "today" is never offered as the earliest pick.
+function tomorrowDateString() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 // Create dialog — collects name, scopes, pipeline scoping, rate limit and an
-// optional expiry. The plaintext key never passes through here: the caller
-// creates the record and hands the result to `RevealApiKeyDialog` instead.
+// optional expiry, validated to match the `/api/api-keys` route exactly so a
+// rejected submission is rare rather than the common case. The plaintext key
+// never passes through here: the caller creates the record and hands the
+// result to `RevealApiKeyDialog` instead.
 export function CreateApiKeyDialog({ open, onOpenChange, pipelines, onCreate }) {
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const minExpiry = useMemo(() => tomorrowDateString(), []);
 
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (open) setDraft(EMPTY_DRAFT);
+    if (open) {
+      setDraft(EMPTY_DRAFT);
+      setAttempted(false);
+    }
   }
 
   const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
@@ -50,17 +68,33 @@ export function CreateApiKeyDialog({ open, onOpenChange, pipelines, onCreate }) 
       scopes: on ? [...d.scopes, value] : d.scopes.filter((s) => s !== value),
     }));
 
+  const trimmedName = draft.name.trim();
+  const nameError = !trimmedName
+    ? "Name is required."
+    : trimmedName.length > NAME_MAX
+      ? `Name must be ${NAME_MAX} characters or fewer.`
+      : "";
+  const scopesError = draft.scopes.length === 0 ? "Pick at least one scope." : "";
+  const rateLimitNum = Number(draft.rateLimitPerMin);
+  const rateLimitError =
+    draft.rateLimitPerMin === "" || !Number.isInteger(rateLimitNum) || rateLimitNum < RATE_MIN || rateLimitNum > RATE_MAX
+      ? `Enter a whole number from ${RATE_MIN} to ${RATE_MAX}.`
+      : "";
+  const expiresAtError =
+    draft.expiresAt && new Date(draft.expiresAt).getTime() <= new Date().getTime()
+      ? "Expiry must be a future date."
+      : "";
+  const isValid = !nameError && !scopesError && !rateLimitError && !expiresAtError;
+
   const submit = async () => {
-    if (!draft.name.trim()) {
-      toast.error("Give the key a name.");
-      return;
-    }
+    setAttempted(true);
+    if (!isValid) return;
     setSaving(true);
     const ok = await onCreate({
-      name: draft.name.trim(),
+      name: trimmedName,
       scopes: draft.scopes,
       pipelineIds: draft.pipelineIds,
-      rateLimitPerMin: Number(draft.rateLimitPerMin) || 60,
+      rateLimitPerMin: rateLimitNum,
       expiresAt: draft.expiresAt || null,
     });
     setSaving(false);
@@ -85,8 +119,13 @@ export function CreateApiKeyDialog({ open, onOpenChange, pipelines, onCreate }) 
               value={draft.name}
               onChange={(e) => set("name")(e.target.value)}
               placeholder="e.g. Production server"
+              maxLength={NAME_MAX}
+              aria-invalid={attempted && !!nameError}
               autoFocus
             />
+            {attempted && nameError ? (
+              <p className="text-xs text-destructive-text">{nameError}</p>
+            ) : null}
           </Field>
 
           <Field label="Scopes" hint="What this key is allowed to call.">
@@ -106,6 +145,9 @@ export function CreateApiKeyDialog({ open, onOpenChange, pipelines, onCreate }) 
                 </label>
               ))}
             </div>
+            {attempted && scopesError ? (
+              <p className="text-xs text-destructive-text">{scopesError}</p>
+            ) : null}
           </Field>
 
           <Field
@@ -123,27 +165,33 @@ export function CreateApiKeyDialog({ open, onOpenChange, pipelines, onCreate }) 
           </Field>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field
-              label="Rate limit (per minute)"
-              stepper
-              value={draft.rateLimitPerMin}
-              onValueChange={set("rateLimitPerMin")}
-              min={1}
-              max={6000}
-            >
+            <Field label="Rate limit (per minute)" htmlFor="apikey-rate-limit">
               <Input
+                id="apikey-rate-limit"
                 type="number"
-                min={1}
+                min={RATE_MIN}
+                max={RATE_MAX}
+                step={1}
                 value={draft.rateLimitPerMin}
                 onChange={(e) => set("rateLimitPerMin")(e.target.value)}
+                aria-invalid={attempted && !!rateLimitError}
               />
+              {attempted && rateLimitError ? (
+                <p className="text-xs text-destructive-text">{rateLimitError}</p>
+              ) : null}
             </Field>
-            <Field label="Expires" hint="Optional.">
+            <Field label="Expires" htmlFor="apikey-expires" hint="Optional.">
               <Input
+                id="apikey-expires"
                 type="date"
+                min={minExpiry}
                 value={draft.expiresAt || ""}
                 onChange={(e) => set("expiresAt")(e.target.value)}
+                aria-invalid={attempted && !!expiresAtError}
               />
+              {attempted && expiresAtError ? (
+                <p className="text-xs text-destructive-text">{expiresAtError}</p>
+              ) : null}
             </Field>
           </div>
         </div>
@@ -152,7 +200,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, pipelines, onCreate }) 
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={saving}>
+          <Button onClick={submit} disabled={saving || !isValid}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
             Create Key
           </Button>

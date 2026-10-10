@@ -17,14 +17,6 @@ import { LoadingArea } from "@geiger/ui";
 import { Button } from "@geiger/ui/button";
 import { ActionMenu } from "@geiger/ui/action-menu";
 import { Badge } from "@geiger/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@geiger/ui/dialog";
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
 import {
@@ -39,6 +31,7 @@ import { listApiKeys } from "@/lib/supabase/api_keys";
 
 import { McpServerDialog } from "./mcp_server_dialog";
 import { McpServerDetailSheet } from "./mcp_server_sheet";
+import { ConfirmDialog } from "./confirm_dialog";
 import { GatedAction } from "./gated_action";
 import { MCP_STATUS_MAP, MCP_TOOL_DEFS } from "./constants";
 
@@ -283,31 +276,23 @@ export function McpServersScreen() {
         onToggleStatus={handleToggleStatus}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete MCP Server</DialogTitle>
-            <DialogDescription>
-              Delete <span className="font-medium text-foreground">{deleteTarget?.name}</span>?
-              Connected clients will stop working immediately. This can&apos;t be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-red-500/90 text-white hover:bg-red-500"
-              onClick={() => {
-                handleDelete(deleteTarget);
-                setDeleteTarget(null);
-              }}
-            >
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete MCP Server"
+        description={
+          <>
+            Delete <span className="font-medium text-foreground">{deleteTarget?.name}</span>?
+            Connected clients will stop working immediately. This can&apos;t be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        icon={Trash2}
+        onConfirm={() => {
+          handleDelete(deleteTarget);
+          setDeleteTarget(null);
+        }}
+      />
     </MainScreenWrapper>
   );
 }
