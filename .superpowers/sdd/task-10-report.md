@@ -2,7 +2,7 @@
 
 Worktree: `C:\Pro\geiger-grey\.claude\worktrees\agent-a5aa7af34ca7c9af5`
 Branch: `worktree-agent-a5aa7af34ca7c9af5`
-Commit: see bottom (added after this report is written and the commit is made).
+Commit: `7a542dc` — `feat(grey): Knowledge Bases + Ingestion Presets screens`
 
 ## Status: Complete
 
