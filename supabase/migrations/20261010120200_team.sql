@@ -15,23 +15,33 @@
 --     function without breaking existing callers mid-migration. grey has no
 --     prior deployment, so rbac_ensure_membership / sync_project_team are
 --     defined once, directly, with the hardened (final) body:
---       - rbac_ensure_membership: locks the project row (for update), never
---         trusts a caller-supplied p_default_role (kept only for signature
---         compatibility; unused), never promotes a "first joiner" to Owner,
---         and only claims a pending invitation when it is status='invited'
---         and points at a role actually scoped to this project.
---       - sync_project_team: requires auth.role() = 'service_role' or
---         grey.can_administer_roles(project_id); never trusts a caller-
---         supplied default role either — it resolves the project's own
---         'member' role server-side.
+--       - rbac_ensure_membership: locks the project row (for update) to
+--         serialize concurrent onboarding; never trusts a caller-supplied
+--         p_default_role (kept only for signature compatibility; unused) and
+--         has no default-role fallback at all — no suite mapping + no valid
+--         invite means no access; never promotes a "first joiner" to Owner;
+--         always claims the caller's pending project_members row by
+--         project+email (any status) in place, denies outright on a
+--         'suspended' row, and only honours an 'invited' row's role while it
+--         is still scoped to this project.
+--       - sync_project_team: requires coalesce(auth.role(), '') =
+--         'service_role' or grey.can_administer_roles(project_id); never
+--         trusts a caller-supplied default role either — it resolves the
+--         project's own 'member' role server-side.
 --       - grey.check_role_grant_project(): a trigger on grey.role_grants
 --         enforcing that a grant's role actually belongs to the grant's
 --         project (or is a null-project suite template) — closes the gap
 --         where the role_id FK alone only checks the UUID exists, not that
 --         it is scoped to the right project.
 --     Every SECURITY DEFINER function below has EXECUTE revoked from
---     public/anon; only authenticated (and service_role, for the two
---     onboarding RPCs) may call them.
+--     public/anon. What's granted to authenticated vs. service_role varies
+--     per function: rbac_role_for_member and rbac_ensure_membership grant to
+--     both (the app calls them as the signed-in user); sync_project_team
+--     grants to both too but additionally gates itself on service_role OR an
+--     administering caller; can_administer_roles grants to both (RLS calls it
+--     as authenticated, admin tooling may call it as service_role);
+--     check_role_grant_project is a trigger function and is granted to none
+--     of them — Postgres invokes it directly as the trigger owner.
 --
 -- Owns:
 --   grey.project_members   — per-project assignment overlay (role/status/groups)
@@ -250,17 +260,22 @@ grant execute on function grey.rbac_role_for_member(uuid, uuid) to authenticated
 -- The caller's own membership — hardened final body (ported from events
 -- 20261002091000_operations_role_write_guards.sql without the rename dance).
 --
---   - Locks the project row (for update) so two concurrent joins can't both
---     think they're "the first member".
+--   - Locks the project row (for update) to serialize concurrent onboarding
+--     attempts for this project, so two simultaneous calls for the same
+--     person can't both decide to insert a grant/roster row at once.
 --   - Never promotes a first joiner to Owner. Ownership comes only from the
 --     suite role mapping (grey.rbac_role_for_member) or an explicit grant.
 --   - p_default_role is accepted for signature compatibility but IGNORED — a
---     caller-supplied role id is never trusted; the fallback role is resolved
---     server-side (the project's own 'member' role).
---   - Claims a pending invitation only when it is status='invited' and its
---     role is actually scoped to this project (role_id's project_id = the
---     project — not a null-project template, which an invite should never
---     point at).
+--     caller-supplied role id is never trusted, and there is no fallback to
+--     any project default role either: no suite mapping + no valid invite
+--     means no access (mirrors events; no default-role widening).
+--   - Always locates (for update) the caller's pending project_members row by
+--     project+email, regardless of status, and claims it in place rather
+--     than inserting a second row (project_members_email_uniq would reject
+--     that). A 'suspended' row is an explicit denial (return null, no
+--     grant). An 'invited' row's role is honoured only while it still points
+--     at a role scoped to this project (not a null-project template, which
+--     an invite should never use).
 -- ---------------------------------------------------------------------------
 create or replace function grey.rbac_ensure_membership(
   p_project_id uuid,
@@ -326,39 +341,48 @@ begin
     return null;
   end if;
 
+  -- The caller's pending roster row, if any — located by project+email
+  -- regardless of status and locked for the duration of this decision, so
+  -- the claim below always lands on this row and never collides with
+  -- project_members_email_uniq by inserting a second one.
   select * into v_invite
     from grey.project_members
    where project_id = p_project_id
      and user_id is null
      and v_email <> ''
      and lower(email) = lower(v_email)
-     and status = 'invited'
      and deleted_at is null
-     and exists (
-       select 1 from public.roles r
-        where r.id = role_id and r.project_id = p_project_id and r.deleted_at is null
-     )
-   limit 1;
+   limit 1
+   for update;
+
+  -- A suspended invite is an explicit denial: never grant from it, and never
+  -- fall through to the suite-role mapping either.
+  if v_invite.id is not null and v_invite.status = 'suspended' then
+    return null;
+  end if;
 
   -- What their suite role entitles them to.
   v_role := grey.rbac_role_for_member(p_project_id, v_uid);
 
-  -- Then an explicit, project-scoped invitation.
-  if v_role is null then
+  -- Then an explicit invitation — only while it is still status='invited'
+  -- and points at a role that actually belongs to this project (never a
+  -- null-project template, which an invite should never use).
+  if v_role is null
+     and v_invite.id is not null
+     and v_invite.status = 'invited'
+     and exists (
+       select 1 from public.roles r
+        where r.id = v_invite.role_id and r.project_id = p_project_id and r.deleted_at is null
+     )
+  then
     v_role := v_invite.role_id;
   end if;
 
-  -- Still nothing: the project's own system 'member' role, resolved
-  -- server-side — never the caller-supplied p_default_role.
+  -- Neither the suite mapping nor a valid invite yields a role: no access.
+  -- There is deliberately no fallback to a project default role — that would
+  -- silently widen access for anyone merely able to reach the project.
   if v_role is null then
-    select r.id into v_role
-      from public.roles r
-     where r.project_id = p_project_id and r.key = 'member' and r.deleted_at is null
-     limit 1;
-  end if;
-
-  if v_role is null then
-    return null;   -- roles not seeded yet; the next pass picks it up
+    return null;
   end if;
 
   insert into grey.role_grants (project_id, user_id, role_id, status)
@@ -366,10 +390,14 @@ begin
   on conflict do nothing;
 
   if v_invite.id is not null then
+    -- Claim the existing row in place rather than inserting a second one for
+    -- this email. Only flip status to 'active' when it was 'invited' — any
+    -- other status (there is no other reachable one here, 'suspended' having
+    -- already returned) is left as-is.
     update grey.project_members
        set user_id = v_uid,
            role_id = v_role,
-           status = 'active',
+           status = case when status = 'invited' then 'active' else status end,
            name = case when name = '' then v_name else name end,
            avatar_url = coalesce(avatar_url, v_avatar),
            joined_at = coalesce(joined_at, now())
@@ -419,7 +447,7 @@ begin
     return 0;
   end if;
 
-  if auth.role() <> 'service_role' and not grey.can_administer_roles(p_project_id) then
+  if coalesce(auth.role(), '') <> 'service_role' and not grey.can_administer_roles(p_project_id) then
     raise exception 'Project role administration required' using errcode = '42501';
   end if;
 

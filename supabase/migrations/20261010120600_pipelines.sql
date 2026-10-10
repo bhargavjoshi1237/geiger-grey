@@ -155,7 +155,8 @@ declare
 begin
   select secret_id into v_secret_id
     from grey.model_providers
-   where id = p_provider and deleted_at is null;
+   where id = p_provider and deleted_at is null
+   for update;
 
   if not found then
     raise exception 'PROVIDER_NOT_FOUND' using errcode = 'P0002';

@@ -161,6 +161,10 @@ as $$
   );
 $$;
 
+-- Left as the @geiger/rbac package output: granting anon here is intentional
+-- and safe, not an oversight — the predicate's "where g.user_id = auth.uid()"
+-- simply evaluates to false for an anonymous caller (auth.uid() is null), so
+-- it never authorizes an anon request; it is only ever executable, not usable.
 grant execute on function grey.rbac_allows(text, uuid, text, uuid) to anon, authenticated;
 grant execute on function public.rbac_key_matches(text[], text) to anon, authenticated;
 

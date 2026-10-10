@@ -268,7 +268,7 @@ create policy grey_sources_storage_all on storage.objects for all to authenticat
   using (
     bucket_id = 'grey-sources'
     and case
-      when (storage.foldername(name))[1] ~ '^[0-9a-f-]{36}$'
+      when (storage.foldername(name))[1] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
         then grey.can_access_project(((storage.foldername(name))[1])::uuid)
       else false
     end
@@ -276,7 +276,7 @@ create policy grey_sources_storage_all on storage.objects for all to authenticat
   with check (
     bucket_id = 'grey-sources'
     and case
-      when (storage.foldername(name))[1] ~ '^[0-9a-f-]{36}$'
+      when (storage.foldername(name))[1] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
         then grey.can_access_project(((storage.foldername(name))[1])::uuid)
       else false
     end
@@ -284,10 +284,10 @@ create policy grey_sources_storage_all on storage.objects for all to authenticat
 
 -- @down
 drop policy if exists grey_sources_storage_all on storage.objects;
--- Objects must go before the bucket row (storage.objects.bucket_id FK);
--- otherwise the bucket delete fails and the whole rollback aborts.
-delete from storage.objects where bucket_id = 'grey-sources';
-delete from storage.buckets where id = 'grey-sources';
+-- The grey-sources bucket and any objects in it are intentionally left in
+-- place — emptying/removing a Storage bucket is a Storage API operation, not
+-- a plain SQL delete; re-running @up is safe (the bucket insert is on
+-- conflict do nothing).
 drop table if exists grey.chunks cascade;
 drop table if exists grey.ingestion_jobs cascade;
 drop table if exists grey.sources cascade;
