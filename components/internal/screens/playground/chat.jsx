@@ -16,6 +16,7 @@ import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers"
 import { ScreenHeader } from "@/components/internal/shared/screen_kit";
 import { LoadingArea, LogoLoading } from "@geiger/ui";
 import { Button } from "@geiger/ui/button";
+import { Badge } from "@geiger/ui/badge";
 import { Textarea } from "@geiger/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@geiger/ui/popover";
 import {
@@ -40,7 +41,7 @@ import {
 import { listPipelines } from "@/lib/supabase/pipelines";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
 import { formatRelative } from "@/lib/grey/format";
-import { Composer, MessageList } from "./chat_kit";
+import { Composer, MessageList, useOpenSource } from "./chat_kit";
 import { RunSettingsPanel } from "./run_settings";
 import { EXAMPLE_QUESTIONS } from "./constants";
 
@@ -52,46 +53,36 @@ function MessageFeedback({ message, onFeedback, onUnanswered }) {
   const feedback = message.feedback;
 
   return (
-    <div className="flex items-center gap-0.5">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Good answer"
-        onClick={() => onFeedback(message, { feedback: feedback === "up" ? null : "up" })}
-        className={cn(
-          "h-6 w-6",
-          feedback === "up"
-            ? "text-emerald-400"
-            : "text-text-tertiary hover:bg-surface-hover hover:text-foreground",
-        )}
-      >
-        <ThumbsUp className="h-3.5 w-3.5" />
-      </Button>
+    <div className="flex items-center gap-1">
+      <Badge asChild variant={feedback === "up" ? "success" : "outline"}>
+        <button
+          type="button"
+          aria-label="Good answer"
+          onClick={() => onFeedback(message, { feedback: feedback === "up" ? null : "up" })}
+          className="cursor-pointer"
+        >
+          <ThumbsUp className="h-3 w-3" />
+        </button>
+      </Badge>
 
       <Popover open={noteOpen} onOpenChange={setNoteOpen}>
         <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Poor answer"
-            onClick={() => {
-              if (feedback === "down") {
-                onFeedback(message, { feedback: null, feedbackNote: null });
-                return;
-              }
-              setNoteOpen(true);
-            }}
-            className={cn(
-              "h-6 w-6",
-              feedback === "down"
-                ? "text-red-400"
-                : "text-text-tertiary hover:bg-surface-hover hover:text-foreground",
-            )}
-          >
-            <ThumbsDown className="h-3.5 w-3.5" />
-          </Button>
+          <Badge asChild variant={feedback === "down" ? "danger" : "outline"}>
+            <button
+              type="button"
+              aria-label="Poor answer"
+              onClick={() => {
+                if (feedback === "down") {
+                  onFeedback(message, { feedback: null, feedbackNote: null });
+                  return;
+                }
+                setNoteOpen(true);
+              }}
+              className="cursor-pointer"
+            >
+              <ThumbsDown className="h-3 w-3" />
+            </button>
+          </Badge>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 space-y-2">
           <p className="text-xs text-text-secondary">What went wrong? (optional)</p>
@@ -115,21 +106,16 @@ function MessageFeedback({ message, onFeedback, onUnanswered }) {
         </PopoverContent>
       </Popover>
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label={message.unanswered ? "Marked as unanswered" : "Mark unanswered"}
-        onClick={() => onUnanswered(message)}
-        className={cn(
-          "h-6 w-6",
-          message.unanswered
-            ? "text-amber-400"
-            : "text-text-tertiary hover:bg-surface-hover hover:text-foreground",
-        )}
-      >
-        <CircleHelp className="h-3.5 w-3.5" />
-      </Button>
+      <Badge asChild variant={message.unanswered ? "warning" : "outline"}>
+        <button
+          type="button"
+          aria-label={message.unanswered ? "Marked as unanswered" : "Mark unanswered"}
+          onClick={() => onUnanswered(message)}
+          className="cursor-pointer"
+        >
+          <CircleHelp className="h-3 w-3" />
+        </button>
+      </Badge>
     </div>
   );
 }
@@ -240,6 +226,7 @@ function ChatEmptyState({ pipelines, pipelineId, onPipelineChange, onPickQuestio
 export function ChatScreen() {
   const { projectId } = useProject();
   const url = useWorkspaceUrl();
+  const openSource = useOpenSource();
 
   const [userId, setUserId] = useState(null);
   const [pipelines, setPipelines] = useState([]);
@@ -378,11 +365,6 @@ export function ChatScreen() {
     setHistorySheetOpen(false);
   };
 
-  const openSource = (citation) => {
-    if (!citation?.sourceId) return;
-    url.openRecordInTab("Sources", "source", citation.sourceId);
-  };
-
   const handleSend = async () => {
     const content = composerValue.trim();
     if (!content || sending) return;
@@ -404,7 +386,9 @@ export function ChatScreen() {
     setComposerValue("");
     setSending(true);
 
-    const result = await sendChat({
+    // sendChat() wraps apiFetch, which never throws/returns null — it always
+    // resolves to { data, error }.
+    const { data, error } = await sendChat({
       projectId,
       conversationId: activeConversation?.id,
       pipelineId,
@@ -414,21 +398,21 @@ export function ChatScreen() {
 
     setSending(false);
 
-    if (!result) {
-      toast.error("Couldn't reach the chat backend. Try again.");
+    if (error || !data) {
+      toast.error(error || "Couldn't reach the chat backend. Try again.");
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setComposerValue(content);
       return;
     }
 
     setMessages((prev) => {
-      const next = prev.map((m) => (m.id === tempId ? result.userMessage : m));
-      return result.assistantMessage ? [...next, result.assistantMessage] : next;
+      const next = prev.map((m) => (m.id === tempId ? data.userMessage : m));
+      return data.assistantMessage ? [...next, data.assistantMessage] : next;
     });
 
     if (!activeConversation) {
       const conv = {
-        id: result.conversationId,
+        id: data.conversationId,
         projectId,
         pipelineId,
         userId,
@@ -439,7 +423,7 @@ export function ChatScreen() {
       };
       setActiveConversation(conv);
       setConversations((prev) => [conv, ...prev.filter((c) => c.id !== conv.id)]);
-      url.openRecord("conversation", result.conversationId);
+      url.openRecord("conversation", data.conversationId);
     } else {
       setConversations((prev) =>
         prev.map((c) =>
@@ -449,14 +433,14 @@ export function ChatScreen() {
     }
   };
 
+  // setMessageFeedback returns the updated row on success, null on failure
+  // (never `false`) — a falsy result always means roll back.
   const handleFeedback = async (message, patch) => {
     setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, ...patch } : m)));
     const saved = await setMessageFeedback(message.id, patch);
-    if (saved === false) {
+    if (!saved) {
       toast.error("Couldn't save feedback.");
-      setMessages((prev) =>
-        prev.map((m) => (m.id === message.id ? { ...m, feedback: message.feedback } : m)),
-      );
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
     }
   };
 
@@ -466,11 +450,9 @@ export function ChatScreen() {
       prev.map((m) => (m.id === message.id ? { ...m, unanswered: next } : m)),
     );
     const saved = await setMessageFeedback(message.id, { unanswered: next });
-    if (saved === false) {
+    if (!saved) {
       toast.error("Couldn't update this message.");
-      setMessages((prev) =>
-        prev.map((m) => (m.id === message.id ? { ...m, unanswered: !next } : m)),
-      );
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
     } else {
       toast.success(next ? "Marked unanswered." : "Unmarked.");
     }

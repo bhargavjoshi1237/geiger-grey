@@ -4,10 +4,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { FileText, Loader2, Send } from "lucide-react";
 
 import { Button } from "@geiger/ui/button";
+import { Badge } from "@geiger/ui/badge";
 import { Textarea } from "@geiger/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@geiger/ui/popover";
 import { LogoLoading } from "@geiger/ui";
 import { cn } from "@/lib/utils";
+import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { formatDuration } from "@/lib/grey/format";
 
 // Bespoke chat surface for the Playground — same bubble/composer styling as
@@ -15,6 +17,18 @@ import { formatDuration } from "@/lib/grey/format";
 // spacing), rebuilt around a single-user assistant thread instead of a
 // multi-participant channel: one bubble per turn, no reactions/polls, and an
 // extra citations row under assistant replies.
+
+// Shared "open this citation's source" handler — the live Chat thread and the
+// read-only Conversations transcript both hand off to the Sources tab the
+// same way, via useWorkspaceUrl's atomic openRecordInTab (setTab + openRecord
+// in two calls would lose the param).
+export function useOpenSource() {
+  const url = useWorkspaceUrl();
+  return (citation) => {
+    if (!citation?.sourceId) return;
+    url.openRecordInTab("Sources", "source", citation.sourceId);
+  };
+}
 
 function clockTime(iso) {
   if (!iso) return "";
@@ -96,11 +110,7 @@ export function MessageBubble({ message, actions, onOpenSource }) {
         </div>
 
         <div className={cn("mt-1 flex items-center gap-2 text-[10px] text-text-tertiary", mine && "flex-row-reverse")}>
-          {placeholder ? (
-            <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
-              Placeholder
-            </span>
-          ) : null}
+          {placeholder ? <Badge variant="warning">Placeholder</Badge> : null}
           {message.createdAt ? <span>{clockTime(message.createdAt)}</span> : null}
         </div>
 

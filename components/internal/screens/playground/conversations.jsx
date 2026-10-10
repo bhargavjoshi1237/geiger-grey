@@ -14,7 +14,7 @@ import {
 import { ListPagination, usePagination } from "@/components/internal/shared/pagination";
 import { LoadingArea } from "@geiger/ui";
 import { Badge } from "@geiger/ui/badge";
-import FilterDropdown from "@/components/internal/screens/overview/filter_dropdown";
+import FilterDropdown from "@/components/internal/shared/filter_dropdown";
 import { useProject } from "@/context/project-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { getUser } from "@/lib/supabase/user";
@@ -43,21 +43,21 @@ function FeedbackCell({ summary }) {
     return <span className="text-text-tertiary">—</span>;
   }
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center gap-1.5">
       {summary.up ? (
-        <span className="inline-flex items-center gap-1 text-emerald-400">
+        <Badge variant="success" className="gap-1">
           <ThumbsUp className="h-3 w-3" /> {summary.up}
-        </span>
+        </Badge>
       ) : null}
       {summary.down ? (
-        <span className="inline-flex items-center gap-1 text-red-400">
+        <Badge variant="danger" className="gap-1">
           <ThumbsDown className="h-3 w-3" /> {summary.down}
-        </span>
+        </Badge>
       ) : null}
       {summary.unanswered ? (
-        <span className="inline-flex items-center gap-1 text-amber-400">
+        <Badge variant="warning" className="gap-1">
           <CircleHelp className="h-3 w-3" /> {summary.unanswered}
-        </span>
+        </Badge>
       ) : null}
     </div>
   );
@@ -88,6 +88,10 @@ export function ConversationsScreen() {
         const rows = convs ?? [];
         setConversations(rows);
         setPipelines(pls ?? []);
+        // Per-conversation fan-out: listMessages has no bulk/aggregate variant
+        // yet, so message counts and feedback summaries are computed client
+        // side. Fine at today's volume — swap for a server aggregate (RPC or
+        // view) if this screen's conversation count grows meaningfully.
         const pairs = await Promise.all(
           rows.map(async (c) => [c.id, (await listMessages(c.id)) ?? []]),
         );

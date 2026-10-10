@@ -8,9 +8,8 @@ import { Badge } from "@geiger/ui/badge";
 import { LoadingArea } from "@geiger/ui";
 import { cn } from "@/lib/utils";
 import { listMessages } from "@/lib/supabase/conversations";
-import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { CHANNEL_MAP } from "./constants";
-import { MessageList } from "./chat_kit";
+import { MessageList, useOpenSource } from "./chat_kit";
 
 // Read-only summary of a message's feedback/unanswered state — the live
 // Chat thread uses interactive controls (chat.jsx's MessageFeedback); the
@@ -19,24 +18,24 @@ function FeedbackSummary({ message }) {
   if (message.role !== "assistant") return null;
   if (!message.feedback && !message.unanswered) return null;
   return (
-    <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
+    <div className="flex flex-wrap items-center gap-1.5">
       {message.feedback === "up" ? (
-        <span className="inline-flex items-center gap-1 text-emerald-400">
+        <Badge variant="success" className="gap-1">
           <ThumbsUp className="h-3 w-3" /> Helpful
-        </span>
+        </Badge>
       ) : null}
       {message.feedback === "down" ? (
-        <span className="inline-flex items-center gap-1 text-red-400">
+        <Badge variant="danger" className="gap-1">
           <ThumbsDown className="h-3 w-3" /> Not helpful
-        </span>
+        </Badge>
       ) : null}
       {message.unanswered ? (
-        <span className="inline-flex items-center gap-1 text-amber-400">
+        <Badge variant="warning" className="gap-1">
           <CircleHelp className="h-3 w-3" /> Unanswered
-        </span>
+        </Badge>
       ) : null}
       {message.feedbackNote ? (
-        <span className="truncate italic text-text-tertiary">“{message.feedbackNote}”</span>
+        <span className="truncate text-[11px] italic text-text-tertiary">“{message.feedbackNote}”</span>
       ) : null}
     </div>
   );
@@ -46,7 +45,7 @@ function FeedbackSummary({ message }) {
 // Conversations table. `conversation` carries the row the table already
 // resolved (pipeline/user labels included) so this only has to fetch messages.
 export function TranscriptSheet({ conversation, pipelineName, userLabel, onClose }) {
-  const url = useWorkspaceUrl();
+  const openSource = useOpenSource();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -75,11 +74,6 @@ export function TranscriptSheet({ conversation, pipelineName, userLabel, onClose
   }, [conversationId]);
 
   const channel = CHANNEL_MAP[conversation?.channel] || CHANNEL_MAP.playground;
-
-  const openSource = (citation) => {
-    if (!citation?.sourceId) return;
-    url.openRecordInTab("Sources", "source", citation.sourceId);
-  };
 
   return (
     <Sheet open={!!conversation} onOpenChange={(o) => !o && onClose?.()}>
