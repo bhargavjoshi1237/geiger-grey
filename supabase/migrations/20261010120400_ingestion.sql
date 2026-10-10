@@ -64,6 +64,25 @@ create table if not exists grey.knowledge_bases (
 create index if not exists knowledge_bases_project_idx on grey.knowledge_bases(project_id) where deleted_at is null;
 drop trigger if exists knowledge_bases_touch on grey.knowledge_bases;
 create trigger knowledge_bases_touch before update on grey.knowledge_bases for each row execute function grey.touch_updated_at();
+
+-- embedding_model is immutable after create (spec §3 All Knowledge Bases):
+-- changing it would silently desync existing chunk embeddings from new ones.
+create or replace function grey.lock_embedding_model()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.embedding_model is distinct from old.embedding_model then
+    raise exception 'EMBEDDING_MODEL_LOCKED';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists knowledge_bases_embedding_model_lock on grey.knowledge_bases;
+create trigger knowledge_bases_embedding_model_lock before update on grey.knowledge_bases
+for each row execute function grey.lock_embedding_model();
+
 alter table grey.knowledge_bases enable row level security;
 drop policy if exists knowledge_bases_member_all on grey.knowledge_bases;
 create policy knowledge_bases_member_all on grey.knowledge_bases for all to authenticated
@@ -188,7 +207,7 @@ values
       "ocr": false,
       "chunking": {"strategy": "recursive", "size": 512, "overlap": 64, "atomicTables": true, "headingBreadcrumbs": true},
       "enrichment": {"contextual": false, "parentChild": false},
-      "media": {"transcribe": false, "diarize": false, "keyframes": false, "windowSeconds": 45},
+      "media": {"transcribe": true, "diarize": false, "keyframes": false, "windowSeconds": 45},
       "graph": {"extract": false},
       "prices": {"perPage": 0.002, "perMediaMinute": 0.006, "perKeyframeMinute": 0.04, "perMillionTokensGraph": 0.5, "perMillionTokensContextual": 1.02}
     }'::jsonb
@@ -242,16 +261,36 @@ insert into storage.buckets (id, name, public)
 values ('grey-sources', 'grey-sources', false)
 on conflict (id) do nothing;
 
+-- Guard the uuid cast: a malformed/unexpected path (no leading project-uuid
+-- folder) must deny rather than raise a cast error that would 500 the query.
 drop policy if exists grey_sources_storage_all on storage.objects;
 create policy grey_sources_storage_all on storage.objects for all to authenticated
-  using (bucket_id = 'grey-sources' and grey.can_access_project((storage.foldername(name))[1]::uuid))
-  with check (bucket_id = 'grey-sources' and grey.can_access_project((storage.foldername(name))[1]::uuid));
+  using (
+    bucket_id = 'grey-sources'
+    and case
+      when (storage.foldername(name))[1] ~ '^[0-9a-f-]{36}$'
+        then grey.can_access_project(((storage.foldername(name))[1])::uuid)
+      else false
+    end
+  )
+  with check (
+    bucket_id = 'grey-sources'
+    and case
+      when (storage.foldername(name))[1] ~ '^[0-9a-f-]{36}$'
+        then grey.can_access_project(((storage.foldername(name))[1])::uuid)
+      else false
+    end
+  );
 
 -- @down
 drop policy if exists grey_sources_storage_all on storage.objects;
+-- Objects must go before the bucket row (storage.objects.bucket_id FK);
+-- otherwise the bucket delete fails and the whole rollback aborts.
+delete from storage.objects where bucket_id = 'grey-sources';
 delete from storage.buckets where id = 'grey-sources';
 drop table if exists grey.chunks cascade;
 drop table if exists grey.ingestion_jobs cascade;
 drop table if exists grey.sources cascade;
 drop table if exists grey.knowledge_bases cascade;
+drop function if exists grey.lock_embedding_model();
 drop table if exists grey.ingestion_presets cascade;

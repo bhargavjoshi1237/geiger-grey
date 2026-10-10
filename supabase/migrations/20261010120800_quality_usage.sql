@@ -96,7 +96,7 @@ create table if not exists grey.request_logs (
   pipeline_id uuid references grey.pipelines(id) on delete set null,
   api_key_id uuid references grey.api_keys(id) on delete set null,
   conversation_id uuid references grey.conversations(id) on delete set null,
-  channel text,
+  channel text check (channel in ('playground', 'widget', 'api')),
   query text,
   status text not null default 'ok' check (status in ('ok', 'error', 'stub')),
   latency_ms integer,
@@ -160,8 +160,10 @@ create table if not exists grey.project_settings (
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+-- Non-partial: PostgREST's upsert (onConflict=project_id) targets a plain
+-- unique index/constraint, not a partial one.
 create unique index if not exists project_settings_project_uniq
-  on grey.project_settings(project_id) where deleted_at is null;
+  on grey.project_settings(project_id);
 drop trigger if exists project_settings_touch on grey.project_settings;
 create trigger project_settings_touch before update on grey.project_settings for each row execute function grey.touch_updated_at();
 alter table grey.project_settings enable row level security;

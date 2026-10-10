@@ -8,31 +8,41 @@
 --                                           @geiger/rbac's public.roles from the
 --                                           start, so there is no legacy roles
 --                                           table to carry)
---   20260809133335_rbac_team_management.sql
---   20260809134349_rbac_claim_invitation.sql
---   20260809135817_rbac_org_role_mapping.sql  — final, suite-role-aware bodies
---                                                 of rbac_ensure_membership /
---                                                 sync_project_team are ported
---                                                 directly (the two intermediate
---                                                 events migrations only exist
---                                                 to show how those functions
---                                                 evolved; grey starts at the
---                                                 final version)
---   20261002091000_operations_role_write_guards.sql — only the roles / grants /
---                                                       members restrictive
---                                                       write guards; helper
---                                                       renamed
---                                                       events.ops_can_administer_roles
---                                                       -> grey.can_administer_roles
+--   20260809135817_rbac_org_role_mapping.sql  — rbac_role_for_member
+--   20261002091000_operations_role_write_guards.sql — ported as FINAL bodies,
+--     not as the events "rename to ops_private_*, wrap in a public shim"
+--     dance: that dance exists in events only to harden an already-deployed
+--     function without breaking existing callers mid-migration. grey has no
+--     prior deployment, so rbac_ensure_membership / sync_project_team are
+--     defined once, directly, with the hardened (final) body:
+--       - rbac_ensure_membership: locks the project row (for update), never
+--         trusts a caller-supplied p_default_role (kept only for signature
+--         compatibility; unused), never promotes a "first joiner" to Owner,
+--         and only claims a pending invitation when it is status='invited'
+--         and points at a role actually scoped to this project.
+--       - sync_project_team: requires auth.role() = 'service_role' or
+--         grey.can_administer_roles(project_id); never trusts a caller-
+--         supplied default role either — it resolves the project's own
+--         'member' role server-side.
+--       - grey.check_role_grant_project(): a trigger on grey.role_grants
+--         enforcing that a grant's role actually belongs to the grant's
+--         project (or is a null-project suite template) — closes the gap
+--         where the role_id FK alone only checks the UUID exists, not that
+--         it is scoped to the right project.
+--     Every SECURITY DEFINER function below has EXECUTE revoked from
+--     public/anon; only authenticated (and service_role, for the two
+--     onboarding RPCs) may call them.
 --
 -- Owns:
 --   grey.project_members   — per-project assignment overlay (role/status/groups)
 --   grey.member_groups     — sub-teams within a project
---   grey.member_activity   — append-only audit feed
+--   grey.member_activity   — append-only audit feed (select+insert only; no
+--                            update/delete policy — nothing may rewrite history)
 --   grey.rbac_role_for_member(uuid, uuid)   suite org role -> grey role id
 --   grey.rbac_ensure_membership(uuid, uuid) the caller's own roster row + grant
 --   grey.sync_project_team(uuid, uuid)      org -> roster + default grant
 --   grey.can_administer_roles(uuid)         write-guard predicate
+--   grey.check_role_grant_project()         role_grants project-boundary trigger
 --
 -- Role authority is grey.role_grants (adopted in the previous migration) and
 -- nothing else; project_members is the display/invitation overlay only.
@@ -115,7 +125,9 @@ create policy member_groups_member_all on grey.member_groups for all to authenti
   using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
 
 -- ---------------------------------------------------------------------------
--- member_activity — append-only audit feed (no updated_at / soft delete).
+-- member_activity — append-only audit feed. Only select + insert policies are
+-- granted: there is deliberately no update/delete policy, so RLS denies any
+-- attempt to rewrite or erase history even from an authenticated member.
 -- action: invited | role_changed | status_changed | removed | group_changed |
 --         role_created | role_updated | role_deleted | group_created
 -- ---------------------------------------------------------------------------
@@ -130,16 +142,26 @@ create table if not exists grey.member_activity (
   detail jsonb not null default '{}'::jsonb,
   metadata jsonb not null default '{}'::jsonb,
   created_by uuid default auth.uid(),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
 );
 
 create index if not exists member_activity_project_idx
   on grey.member_activity (project_id, created_at desc);
 
+drop trigger if exists member_activity_touch on grey.member_activity;
+create trigger member_activity_touch before update on grey.member_activity
+for each row execute function grey.touch_updated_at();
+
 alter table grey.member_activity enable row level security;
 drop policy if exists member_activity_member_all on grey.member_activity;
-create policy member_activity_member_all on grey.member_activity for all to authenticated
-  using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
+drop policy if exists member_activity_member_select on grey.member_activity;
+create policy member_activity_member_select on grey.member_activity for select to authenticated
+  using (grey.can_access_project(project_id));
+drop policy if exists member_activity_member_insert on grey.member_activity;
+create policy member_activity_member_insert on grey.member_activity for insert to authenticated
+  with check (grey.can_access_project(project_id));
 
 -- ---------------------------------------------------------------------------
 -- The grey role a person should hold in a project, from their suite org role.
@@ -221,15 +243,28 @@ begin
 end;
 $$;
 
-grant execute on function grey.rbac_role_for_member(uuid, uuid) to anon, authenticated;
+revoke all on function grey.rbac_role_for_member(uuid, uuid) from public, anon;
+grant execute on function grey.rbac_role_for_member(uuid, uuid) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- The caller's own membership, suite-role aware, and claims a pending email
--- invitation in place rather than inserting a second roster row for it.
+-- The caller's own membership — hardened final body (ported from events
+-- 20261002091000_operations_role_write_guards.sql without the rename dance).
+--
+--   - Locks the project row (for update) so two concurrent joins can't both
+--     think they're "the first member".
+--   - Never promotes a first joiner to Owner. Ownership comes only from the
+--     suite role mapping (grey.rbac_role_for_member) or an explicit grant.
+--   - p_default_role is accepted for signature compatibility but IGNORED — a
+--     caller-supplied role id is never trusted; the fallback role is resolved
+--     server-side (the project's own 'member' role).
+--   - Claims a pending invitation only when it is status='invited' and its
+--     role is actually scoped to this project (role_id's project_id = the
+--     project — not a null-project template, which an invite should never
+--     point at).
 -- ---------------------------------------------------------------------------
 create or replace function grey.rbac_ensure_membership(
   p_project_id uuid,
-  p_default_role uuid default null
+  p_default_role uuid default null -- unused; kept for call-site signature compatibility
 )
 returns uuid
 language plpgsql
@@ -250,7 +285,10 @@ begin
     return null;
   end if;
 
-  if not grey.can_access_project(p_project_id) then
+  -- Serialize onboarding for this project; only canonical membership or a
+  -- real admin-created invitation can establish a role.
+  perform 1 from public.projects where id = p_project_id for update;
+  if not found or not grey.can_access_project(p_project_id) then
     return null;
   end if;
 
@@ -294,30 +332,24 @@ begin
      and user_id is null
      and v_email <> ''
      and lower(email) = lower(v_email)
+     and status = 'invited'
      and deleted_at is null
+     and exists (
+       select 1 from public.roles r
+        where r.id = role_id and r.project_id = p_project_id and r.deleted_at is null
+     )
    limit 1;
 
   -- What their suite role entitles them to.
   v_role := grey.rbac_role_for_member(p_project_id, v_uid);
 
-  -- Then an explicit invitation, then the caller's default.
+  -- Then an explicit, project-scoped invitation.
   if v_role is null then
-    v_role := coalesce(v_invite.role_id, p_default_role);
+    v_role := v_invite.role_id;
   end if;
 
-  -- First person into a project nobody administers claims it, so an ownerless
-  -- workspace can never deadlock.
-  if v_role is null or not exists (
-    select 1 from grey.role_grants
-     where project_id = p_project_id and deleted_at is null and status = 'active'
-  ) then
-    select r.id into v_existing
-      from public.roles r
-     where r.project_id = p_project_id and r.key = 'owner' and r.deleted_at is null
-     limit 1;
-    v_role := coalesce(v_existing, v_role);
-  end if;
-
+  -- Still nothing: the project's own system 'member' role, resolved
+  -- server-side — never the caller-supplied p_default_role.
   if v_role is null then
     select r.id into v_role
       from public.roles r
@@ -359,16 +391,18 @@ begin
 end;
 $$;
 
-grant execute on function grey.rbac_ensure_membership(uuid, uuid) to anon, authenticated;
+revoke all on function grey.rbac_ensure_membership(uuid, uuid) from public, anon;
+grant execute on function grey.rbac_ensure_membership(uuid, uuid) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- Bulk sync: for each member of the project's owning organization (and its
--- creator) that lacks an overlay row, insert one with their suite-mapped role.
--- Exception-guarded: a shared-schema shape mismatch degrades to a no-op.
+-- Bulk sync — hardened final body. Gated: only service_role or someone who
+-- can already administer this project's roles may run it. The authorization
+-- raise sits OUTSIDE the exception-guarded block below, so it is never
+-- swallowed by the shared-schema-mismatch handler.
 -- ---------------------------------------------------------------------------
 create or replace function grey.sync_project_team(
   p_project_id uuid,
-  p_default_role uuid default null
+  p_default_role uuid default null -- unused; kept for call-site signature compatibility
 )
 returns integer
 language plpgsql
@@ -378,98 +412,112 @@ as $$
 declare
   v_org uuid;
   v_creator uuid;
+  v_member_role uuid;
   v_count integer := 0;
 begin
   if p_project_id is null then
     return 0;
   end if;
 
-  select organization_id, created_by
-    into v_org, v_creator
-    from public.projects
-   where id = p_project_id;
+  if auth.role() <> 'service_role' and not grey.can_administer_roles(p_project_id) then
+    raise exception 'Project role administration required' using errcode = '42501';
+  end if;
 
-  if v_org is not null then
-    insert into grey.project_members (
-      project_id, user_id, role_id, status, email, name, avatar_url, joined_at
-    )
+  begin
+    select organization_id, created_by
+      into v_org, v_creator
+      from public.projects
+     where id = p_project_id;
+
+    -- Default role resolved server-side; a caller-supplied id is never used.
+    select r.id into v_member_role
+      from public.roles r
+     where r.project_id = p_project_id and r.key = 'member' and r.deleted_at is null
+     limit 1;
+
+    if v_org is not null then
+      insert into grey.project_members (
+        project_id, user_id, role_id, status, email, name, avatar_url, joined_at
+      )
+      select
+        p_project_id,
+        u.id,
+        coalesce(grey.rbac_role_for_member(p_project_id, u.id), v_member_role),
+        'active',
+        coalesce(u.email, ''),
+        coalesce(
+          nullif(u.raw_user_meta_data ->> 'full_name', ''),
+          nullif(u.raw_user_meta_data ->> 'name', ''),
+          split_part(coalesce(u.email, ''), '@', 1)
+        ),
+        nullif(u.raw_user_meta_data ->> 'avatar_url', ''),
+        now()
+      from public.organization_users ou
+      join auth.users u on u.id = ou."user"
+      where ou."organization" = v_org
+        and not exists (
+          select 1 from grey.project_members m
+          where m.project_id = p_project_id
+            and m.user_id = u.id
+            and m.deleted_at is null
+        );
+
+      get diagnostics v_count = row_count;
+    end if;
+
+    if v_creator is not null then
+      insert into grey.project_members (
+        project_id, user_id, role_id, status, email, name, avatar_url, joined_at
+      )
+      select
+        p_project_id, u.id,
+        coalesce(grey.rbac_role_for_member(p_project_id, u.id), v_member_role),
+        'active',
+        coalesce(u.email, ''),
+        coalesce(
+          nullif(u.raw_user_meta_data ->> 'full_name', ''),
+          nullif(u.raw_user_meta_data ->> 'name', ''),
+          split_part(coalesce(u.email, ''), '@', 1)
+        ),
+        nullif(u.raw_user_meta_data ->> 'avatar_url', ''),
+        now()
+      from auth.users u
+      where u.id = v_creator
+        and not exists (
+          select 1 from grey.project_members m
+          where m.project_id = p_project_id
+            and m.user_id = v_creator
+            and m.deleted_at is null
+        );
+    end if;
+
+    insert into grey.role_grants (project_id, user_id, role_id, status)
     select
       p_project_id,
-      u.id,
-      coalesce(grey.rbac_role_for_member(p_project_id, u.id), p_default_role),
-      'active',
-      coalesce(u.email, ''),
-      coalesce(
-        nullif(u.raw_user_meta_data ->> 'full_name', ''),
-        nullif(u.raw_user_meta_data ->> 'name', ''),
-        split_part(coalesce(u.email, ''), '@', 1)
-      ),
-      nullif(u.raw_user_meta_data ->> 'avatar_url', ''),
-      now()
-    from public.organization_users ou
-    join auth.users u on u.id = ou."user"
-    where ou."organization" = v_org
+      m.user_id,
+      coalesce(grey.rbac_role_for_member(p_project_id, m.user_id), v_member_role),
+      'active'
+    from grey.project_members m
+    where m.project_id = p_project_id
+      and m.user_id is not null
+      and m.deleted_at is null
+      and coalesce(grey.rbac_role_for_member(p_project_id, m.user_id), v_member_role) is not null
       and not exists (
-        select 1 from grey.project_members m
-        where m.project_id = p_project_id
-          and m.user_id = u.id
-          and m.deleted_at is null
+        select 1 from grey.role_grants g
+        where g.project_id = p_project_id
+          and g.user_id = m.user_id
       );
 
-    get diagnostics v_count = row_count;
-  end if;
-
-  if v_creator is not null then
-    insert into grey.project_members (
-      project_id, user_id, role_id, status, email, name, avatar_url, joined_at
-    )
-    select
-      p_project_id, u.id,
-      coalesce(grey.rbac_role_for_member(p_project_id, u.id), p_default_role),
-      'active',
-      coalesce(u.email, ''),
-      coalesce(
-        nullif(u.raw_user_meta_data ->> 'full_name', ''),
-        nullif(u.raw_user_meta_data ->> 'name', ''),
-        split_part(coalesce(u.email, ''), '@', 1)
-      ),
-      nullif(u.raw_user_meta_data ->> 'avatar_url', ''),
-      now()
-    from auth.users u
-    where u.id = v_creator
-      and not exists (
-        select 1 from grey.project_members m
-        where m.project_id = p_project_id
-          and m.user_id = v_creator
-          and m.deleted_at is null
-      );
-  end if;
-
-  insert into grey.role_grants (project_id, user_id, role_id, status)
-  select
-    p_project_id,
-    m.user_id,
-    coalesce(grey.rbac_role_for_member(p_project_id, m.user_id), p_default_role),
-    'active'
-  from grey.project_members m
-  where m.project_id = p_project_id
-    and m.user_id is not null
-    and m.deleted_at is null
-    and coalesce(grey.rbac_role_for_member(p_project_id, m.user_id), p_default_role) is not null
-    and not exists (
-      select 1 from grey.role_grants g
-      where g.project_id = p_project_id
-        and g.user_id = m.user_id
-    );
-
-  return v_count;
-exception
-  when others then
-    return 0;
+    return v_count;
+  exception
+    when others then
+      return 0;
+  end;
 end;
 $$;
 
-grant execute on function grey.sync_project_team(uuid, uuid) to anon, authenticated;
+revoke all on function grey.sync_project_team(uuid, uuid) from public, anon;
+grant execute on function grey.sync_project_team(uuid, uuid) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- Write guards. Restrictive policies cooperate with the permissive policies
@@ -523,7 +571,38 @@ drop policy if exists grey_roster_delete_guard on grey.project_members;
 create policy grey_roster_delete_guard on grey.project_members as restrictive for delete to authenticated
   using (grey.can_administer_roles(project_id));
 
+-- ---------------------------------------------------------------------------
+-- grey.role_grants project-boundary trigger. The role_id FK alone only checks
+-- that the uuid exists in public.roles — not that the role is scoped to the
+-- grant's own project. Without this, a grant could be pointed at another
+-- project's role. A null-project role (a suite-wide template) is still valid.
+-- ---------------------------------------------------------------------------
+create or replace function grey.check_role_grant_project()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, grey
+as $$
+begin
+  if new.project_id is null or not exists (
+    select 1 from public.roles r where r.id = new.role_id
+      and (r.project_id = new.project_id or r.project_id is null)
+  ) then
+    raise exception 'Role grant project mismatch' using errcode = '23503';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function grey.check_role_grant_project() from public, anon, authenticated;
+
+drop trigger if exists role_grant_project_guard on grey.role_grants;
+create trigger role_grant_project_guard before insert or update of project_id, role_id on grey.role_grants
+  for each row execute function grey.check_role_grant_project();
+
 -- @down
+drop trigger if exists role_grant_project_guard on grey.role_grants;
+drop function if exists grey.check_role_grant_project();
 drop policy if exists grey_roster_delete_guard on grey.project_members;
 drop policy if exists grey_roster_update_guard on grey.project_members;
 drop policy if exists grey_roster_insert_guard on grey.project_members;

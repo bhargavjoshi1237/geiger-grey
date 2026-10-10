@@ -22,7 +22,10 @@ create table if not exists grey.api_keys (
   deleted_at timestamptz
 );
 create index if not exists api_keys_project_idx on grey.api_keys(project_id) where deleted_at is null;
-create unique index if not exists api_keys_prefix_uniq on grey.api_keys(prefix) where deleted_at is null;
+-- The prefix alone (gk_live_xxxx) is only a display hint, not a lookup key,
+-- and isn't guaranteed globally unique across projects — key_hash is. A
+-- unique prefix per project isn't needed either, so no index on prefix.
+create unique index if not exists api_keys_key_hash_uniq on grey.api_keys(key_hash);
 drop trigger if exists api_keys_touch on grey.api_keys;
 create trigger api_keys_touch before update on grey.api_keys for each row execute function grey.touch_updated_at();
 alter table grey.api_keys enable row level security;

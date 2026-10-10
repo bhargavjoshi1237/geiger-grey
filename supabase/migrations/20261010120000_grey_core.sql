@@ -46,7 +46,10 @@ as $$
   );
 $$;
 
-grant execute on function grey.can_access_project(uuid) to anon, authenticated;
+-- Called only from "to authenticated" RLS policies and SECURITY DEFINER RPCs —
+-- grey has no anon-readable surface, so anon never needs EXECUTE here.
+revoke all on function grey.can_access_project(uuid) from public, anon;
+grant execute on function grey.can_access_project(uuid) to authenticated, service_role;
 
 -- @down
 drop function if exists grey.can_access_project(uuid);

@@ -13,7 +13,7 @@ create table if not exists grey.kg_types (
   project_id uuid not null references public.projects(id) on delete cascade,
   kind text not null check (kind in ('entity', 'relation')),
   name text not null,
-  color text not null default 'chart-1',
+  color text not null default 'chart-1' check (color in ('chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5')),
   description text,
   is_default boolean not null default false,
   metadata jsonb not null default '{}'::jsonb,

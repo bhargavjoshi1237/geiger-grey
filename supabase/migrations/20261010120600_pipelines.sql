@@ -136,29 +136,29 @@ create policy messages_member_all on grey.messages for all to authenticated
 -- ---------------------------------------------------------------------------
 -- grey.set_provider_secret — stores/rotates a provider's API key in Supabase
 -- Vault rather than a plain column. SECURITY DEFINER so it can write
--- vault.secrets; the project access check is done explicitly before touching
--- anything, and the function is never reachable by anon/authenticated
--- directly — only via the server route (service_role).
+-- vault.secrets. EXECUTE is granted to service_role only (revoked below) and
+-- the server route authorizes the caller before ever calling this — auth.uid()
+-- is null under service_role, so a grey.can_access_project() check here would
+-- always fail; the function only confirms the provider row exists.
 -- ---------------------------------------------------------------------------
 create or replace function grey.set_provider_secret(p_provider uuid, p_secret text)
 returns grey.model_providers
 language plpgsql
 security definer
-set search_path = public, grey, vault, auth
+set search_path = public, grey, vault
 as $$
 declare
-  v_project uuid;
   v_secret_id uuid;
   v_name text;
   v_last4 text;
   r grey.model_providers;
 begin
-  select project_id, secret_id into v_project, v_secret_id
+  select secret_id into v_secret_id
     from grey.model_providers
    where id = p_provider and deleted_at is null;
 
-  if v_project is null or not grey.can_access_project(v_project) then
-    raise exception 'FORBIDDEN' using errcode = '42501';
+  if not found then
+    raise exception 'PROVIDER_NOT_FOUND' using errcode = 'P0002';
   end if;
 
   v_name := 'grey_provider_' || p_provider::text;
