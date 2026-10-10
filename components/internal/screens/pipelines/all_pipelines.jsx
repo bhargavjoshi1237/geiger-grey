@@ -273,7 +273,7 @@ export function AllPipelinesScreen() {
             <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button className="bg-red-500/90 text-white hover:bg-red-500" onClick={() => handleDelete(deleteTarget)}>
+            <Button variant="destructive" onClick={() => handleDelete(deleteTarget)}>
               <Trash2 className="h-4 w-4" /> Delete
             </Button>
           </DialogFooter>

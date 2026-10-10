@@ -77,6 +77,9 @@ export function ProviderDialog({ open, onOpenChange, provider, onSave, saving })
   const submit = () => {
     if (!draft.name.trim()) return;
     onSave({ ...draft, name: draft.name.trim() }, secret.trim());
+    // The raw key only ever needs to live in this field long enough to hand
+    // it off — clear it immediately, whether onSave ends up succeeding or not.
+    setSecret("");
   };
 
   return (

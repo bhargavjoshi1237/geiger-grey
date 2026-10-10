@@ -428,7 +428,7 @@ function DangerSection({ pipeline, canManage, onDelete }) {
         </div>
         <Button
           variant="outline"
-          className="shrink-0 border-red-500/30 bg-transparent text-red-300 hover:bg-red-500/10 hover:text-red-300"
+          className="shrink-0 border-destructive/30 text-destructive-text hover:bg-destructive/10"
           disabled={!canManage}
           onClick={() => setConfirmOpen(true)}
         >
@@ -450,7 +450,7 @@ function DangerSection({ pipeline, canManage, onDelete }) {
               Cancel
             </Button>
             <Button
-              className="bg-red-500/90 text-white hover:bg-red-500"
+              variant="destructive"
               onClick={() => {
                 setConfirmOpen(false);
                 onDelete(pipeline);

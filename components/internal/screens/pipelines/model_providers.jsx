@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Cpu, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { LoadingArea } from "@geiger/ui";
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
-import { DataTable, EmptyState, ScreenHeader, StatusPill } from "@/components/internal/shared/screen_kit";
+import { DataTable, ScreenHeader, StatusPill } from "@/components/internal/shared/screen_kit";
 import { Button } from "@geiger/ui/button";
 import { Badge } from "@geiger/ui/badge";
 import { ActionMenu } from "@geiger/ui/action-menu";
@@ -197,34 +197,37 @@ export function ModelProvidersScreen() {
       header: "",
       align: "right",
       className: "text-right",
-      render: (row) => (
-        <ActionMenu
-          label={`Actions for ${row.name}`}
-          items={[
-            {
-              icon: testingId === row.id ? Loader2 : RefreshCw,
-              label: "Test",
-              onSelect: () => handleTest(row),
-              disabled: !canManage || testingId === row.id,
-              spin: testingId === row.id,
-            },
-            !row.builtIn && {
-              icon: Pencil,
-              label: "Edit",
-              onSelect: () => openEdit(row),
-              disabled: !canManage,
-            },
-            !row.builtIn && { separator: true },
-            !row.builtIn && {
-              icon: Trash2,
-              label: "Delete",
-              variant: "destructive",
-              onSelect: () => setDeleteTarget(row),
-              disabled: !canManage,
-            },
-          ]}
-        />
-      ),
+      render: (row) =>
+        // Grey hosted is metered and built-in — there's nothing to test, edit
+        // or delete, so it gets no action menu at all.
+        row.builtIn ? null : (
+          <ActionMenu
+            label={`Actions for ${row.name}`}
+            items={[
+              {
+                icon: testingId === row.id ? Loader2 : RefreshCw,
+                label: "Test",
+                onSelect: () => handleTest(row),
+                disabled: !canManage || testingId === row.id,
+                spin: testingId === row.id,
+              },
+              {
+                icon: Pencil,
+                label: "Edit",
+                onSelect: () => openEdit(row),
+                disabled: !canManage,
+              },
+              { separator: true },
+              {
+                icon: Trash2,
+                label: "Delete",
+                variant: "destructive",
+                onSelect: () => setDeleteTarget(row),
+                disabled: !canManage,
+              },
+            ]}
+          />
+        ),
     },
   ];
 
@@ -245,25 +248,9 @@ export function ModelProvidersScreen() {
       {loading ? (
         <LoadingArea panel label="Loading providers" />
       ) : (
-        <DataTable
-          columns={columns}
-          data={rows}
-          getRowKey={(row) => row.id}
-          empty={
-            <EmptyState
-              icon={Cpu}
-              title="No model providers yet"
-              description="Add a provider so pipelines have a model to call."
-              action={
-                canManage ? (
-                  <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={openCreate}>
-                    <Plus className="h-4 w-4" /> Add provider
-                  </Button>
-                ) : null
-              }
-            />
-          }
-        />
+        // `rows` always includes the built-in Grey hosted provider, so this
+        // table can never actually be empty — no `empty` state to wire up.
+        <DataTable columns={columns} data={rows} getRowKey={(row) => row.id} />
       )}
 
       <ProviderDialog
@@ -288,7 +275,7 @@ export function ModelProvidersScreen() {
             <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button className="bg-red-500/90 text-white hover:bg-red-500" onClick={() => handleDelete(deleteTarget)}>
+            <Button variant="destructive" onClick={() => handleDelete(deleteTarget)}>
               <Trash2 className="h-4 w-4" /> Delete
             </Button>
           </DialogFooter>
