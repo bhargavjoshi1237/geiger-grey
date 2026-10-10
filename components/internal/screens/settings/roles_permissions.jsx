@@ -568,8 +568,8 @@ function Notice({ icon: Icon = Info, children }) {
 
 // --- Coverage bar ------------------------------------------------------------
 
-// How much of the catalog a role reaches, read the same way as the sell-through
-// bar on All Events.
+// How much of the catalog a role reaches, read the same way as a
+// sell-through bar.
 function CoverageBar({ role, className }) {
   const owner = isOwnerRole(role);
   const total = ALL_PERMISSION_KEYS.length;
@@ -1002,7 +1002,7 @@ function RoleDrawer({
                 variant="outline"
                 size="sm"
                 aria-label="Delete role"
-                className="text-red-400 hover:text-red-300"
+                className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                 onClick={() => {
                   onOpenChange(false);
                   onDelete(role);

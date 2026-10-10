@@ -86,6 +86,13 @@ export function RequestLogsScreen() {
     ...pipelines.map((p) => ({ value: p.id, label: p.name })),
   ];
 
+  const clearFilters = () => {
+    setChannelFilter("all");
+    setStatusFilter("all");
+    setPipelineFilter("all");
+  };
+  const filtersActive = channelFilter !== "all" || statusFilter !== "all" || pipelineFilter !== "all";
+
   const columns = [
     {
       key: "time",
@@ -211,6 +218,13 @@ export function RequestLogsScreen() {
               logs.length
                 ? "Try clearing the filters."
                 : "Queries from the playground, widgets and the API show up here."
+            }
+            action={
+              logs.length && filtersActive ? (
+                <Button variant="outline" size="sm" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : null
             }
           />
         }

@@ -2,8 +2,8 @@
 
 import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Info, Loader2 } from "lucide-react";
-import { NavVisibilitySettings, navVisibilityModel } from "@geiger/ui";
+import { Info } from "lucide-react";
+import { NavVisibilitySettings, navVisibilityModel, LoadingArea } from "@geiger/ui";
 
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
 import { ScreenHeader, StatsBar } from "@/components/internal/shared/screen_kit";
@@ -13,7 +13,8 @@ import navConfig from "@/geiger-ui.config";
 
 // Settings → Navigation. Lets this user hide the parts of the sidebar they
 // don't use, for this project only — it's a personal preference, stored per
-// (project, user) in grey.user_nav_prefs, so teammates keep their own sidebar.
+// (project, user) in the suite-shared public.user_nav_prefs table, so
+// teammates keep their own sidebar and every Geiger product reads the same row.
 //
 // The rules are declared in geiger-ui.config.js and enforced by @geiger/ui's
 // <NavVisibilitySettings>: a switch that would leave a visible screen without
@@ -87,10 +88,7 @@ export function NavigationSettingsScreen() {
     return (
       <MainScreenWrapper>
         {header}
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-subtle px-6 py-16 text-sm text-text-secondary">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading your navigation…
-        </div>
+        <LoadingArea label="Loading your navigation" />
       </MainScreenWrapper>
     );
   }

@@ -32,16 +32,16 @@ export const MEMBER_STATUS_FILTER_OPTIONS = [
 // --- Activity feed ---------------------------------------------------------
 
 export const ACTIVITY_ACTION_MAP = {
-  invited: { label: "invited", icon: UserPlus, tone: "text-sky-400" },
-  role_changed: { label: "changed the role of", icon: ShieldCheck, tone: "text-violet-300" },
-  status_changed: { label: "updated the status of", icon: Activity, tone: "text-amber-400" },
-  suspended: { label: "suspended", icon: Ban, tone: "text-red-400" },
-  removed: { label: "removed", icon: UserMinus, tone: "text-red-400" },
-  group_changed: { label: "updated groups for", icon: UsersRound, tone: "text-emerald-400" },
-  role_created: { label: "created role", icon: Sparkles, tone: "text-violet-300" },
-  role_updated: { label: "updated role", icon: ShieldCheck, tone: "text-violet-300" },
-  role_deleted: { label: "deleted role", icon: UserMinus, tone: "text-red-400" },
-  group_created: { label: "created group", icon: UsersRound, tone: "text-emerald-400" },
+  invited: { label: "invited", icon: UserPlus, tone: "text-sky-600 dark:text-sky-400" },
+  role_changed: { label: "changed the role of", icon: ShieldCheck, tone: "text-violet-600 dark:text-violet-300" },
+  status_changed: { label: "updated the status of", icon: Activity, tone: "text-amber-600 dark:text-amber-400" },
+  suspended: { label: "suspended", icon: Ban, tone: "text-red-600 dark:text-red-400" },
+  removed: { label: "removed", icon: UserMinus, tone: "text-red-600 dark:text-red-400" },
+  group_changed: { label: "updated groups for", icon: UsersRound, tone: "text-emerald-600 dark:text-emerald-400" },
+  role_created: { label: "created role", icon: Sparkles, tone: "text-violet-600 dark:text-violet-300" },
+  role_updated: { label: "updated role", icon: ShieldCheck, tone: "text-violet-600 dark:text-violet-300" },
+  role_deleted: { label: "deleted role", icon: UserMinus, tone: "text-red-600 dark:text-red-400" },
+  group_created: { label: "created group", icon: UsersRound, tone: "text-emerald-600 dark:text-emerald-400" },
 };
 
 // --- Seats -----------------------------------------------------------------

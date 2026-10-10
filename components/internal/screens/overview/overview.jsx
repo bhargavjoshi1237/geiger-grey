@@ -14,12 +14,19 @@ import {
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
 import {
   ScreenHeader,
-  StatsBar,
+  StatGrid,
   SectionCard,
   EmptyState,
   StatusPill,
 } from "@/components/internal/shared/screen_kit";
 import { Button } from "@geiger/ui/button";
+import { Badge } from "@geiger/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@geiger/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -30,6 +37,7 @@ import {
 } from "@geiger/ui/table";
 import { LoadingArea } from "@geiger/ui";
 import { useProject } from "@/context/project-context";
+import { useCan } from "@/context/rbac-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
 import { listSources } from "@/lib/supabase/sources";
@@ -43,6 +51,8 @@ import { listUsageEvents } from "@/lib/supabase/usage";
 import { getProjectSettings } from "@/lib/supabase/project_settings";
 import { formatCurrency, formatRelative } from "@/lib/grey/format";
 
+// Mirrors sources/constants JOB_STATUS_MAP (that module isn't owned by this
+// task yet, so this is a local copy rather than an import).
 const JOB_STATUS_MAP = {
   queued: { label: "Queued", variant: "neutral", dotClass: "bg-[#737373]" },
   running: { label: "Running", variant: "info", dotClass: "bg-sky-400" },
@@ -59,9 +69,38 @@ const CHECKLIST = [
   { key: "apiKey", label: "Create an API key", tab: "API Keys" },
 ];
 
+// A quick action that explains itself (via tooltip) instead of silently doing
+// nothing when this account can't perform it.
+function QuickAction({ canDo, onClick, icon: Icon, children, primary }) {
+  const button = (
+    <Button
+      variant={primary ? undefined : "outline"}
+      className={primary ? "bg-primary text-primary-foreground" : undefined}
+      disabled={!canDo}
+      onClick={onClick}
+    >
+      <Icon className="h-4 w-4" /> {children}
+    </Button>
+  );
+  if (canDo) return button;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>{button}</span>
+        </TooltipTrigger>
+        <TooltipContent>You don&apos;t have permission for this.</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 export function OverviewScreen() {
   const { projectId } = useProject();
   const { setTab, openRecordInTab } = useWorkspaceUrl();
+  const canCreateKb = useCan("grey.kb.manage");
+  const canUploadSources = useCan("grey.source.upload");
+  const canUsePlayground = useCan("grey.playground.view");
 
   const [loading, setLoading] = useState(true);
   const [knowledgeBases, setKnowledgeBases] = useState([]);
@@ -117,7 +156,9 @@ export function OverviewScreen() {
         setProviders(providerRows ?? []);
         setApiKeys(apiKeyRows ?? []);
         setUsageEvents(usageRows ?? []);
-        setSettings(settingsRow ?? null);
+        // null here means the settings read failed, not "no cap set" — the
+        // stat below shows "—" rather than guessing.
+        setSettings(settingsRow);
         setLoading(false);
       },
     );
@@ -154,17 +195,18 @@ export function OverviewScreen() {
     const spendMonth = usageEvents
       .filter((e) => new Date(e.occurredAt).getTime() >= startOfMonth)
       .reduce((sum, e) => sum + (Number(e.cost) || 0), 0);
+    const settingsError = settings === null;
     const cap = settings?.monthlySoftCap ? Number(settings.monthlySoftCap) : null;
 
     return [
       { label: "Knowledge bases", value: String(knowledgeBases.length) },
       { label: "Sources", value: String(sources.length) },
       { label: "Entities", value: String(entities.length) },
-      { label: "Queries (7d)", value: String(queries7d) },
+      { label: "Queries · 7d", value: String(queries7d) },
       {
-        label: "Spend this month",
+        label: "Spend (MTD)",
         value: formatCurrency(spendMonth),
-        footer: cap ? `of ${formatCurrency(cap)} cap` : "No soft cap set",
+        hint: settingsError ? "—" : cap ? `of ${formatCurrency(cap)} cap` : "No soft cap set",
       },
     ];
   }, [knowledgeBases, sources, entities, usageEvents, settings]);
@@ -199,18 +241,18 @@ export function OverviewScreen() {
         description="Everything about this project's knowledge base, at a glance."
       />
 
-      <StatsBar stats={stats} />
+      <StatGrid stats={stats} columns={5} />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => setTab("All Knowledge Bases")} className="bg-primary text-primary-foreground">
-          <Plus className="h-4 w-4" /> New knowledge base
-        </Button>
-        <Button variant="outline" onClick={() => setTab("Sources")}>
-          <Upload className="h-4 w-4" /> Upload sources
-        </Button>
-        <Button variant="outline" onClick={() => setTab("Chat")}>
-          <MessagesSquare className="h-4 w-4" /> Open playground
-        </Button>
+        <QuickAction canDo={canCreateKb} onClick={() => setTab("All Knowledge Bases")} icon={Plus} primary>
+          New knowledge base
+        </QuickAction>
+        <QuickAction canDo={canUploadSources} onClick={() => setTab("Sources")} icon={Upload}>
+          Upload sources
+        </QuickAction>
+        <QuickAction canDo={canUsePlayground} onClick={() => setTab("Chat")} icon={MessagesSquare}>
+          Open playground
+        </QuickAction>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -314,25 +356,19 @@ export function OverviewScreen() {
             const Icon = done ? CheckCircle2 : Circle;
             return (
               <li key={item.key} className="flex items-center justify-between gap-3 py-3">
-                <button
-                  type="button"
-                  onClick={() => setTab(item.tab)}
-                  className="flex min-w-0 items-center gap-2.5 text-left"
-                >
-                  <Icon
-                    className={
-                      done ? "h-4 w-4 shrink-0 text-emerald-400" : "h-4 w-4 shrink-0 text-text-tertiary"
-                    }
-                  />
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Icon className="h-4 w-4 shrink-0 text-text-tertiary" />
                   <span className={done ? "text-sm text-text-secondary line-through" : "text-sm text-foreground"}>
                     {item.label}
                   </span>
-                </button>
-                {!done ? (
+                </div>
+                {done ? (
+                  <Badge variant="success">Done</Badge>
+                ) : (
                   <Button variant="ghost" size="sm" onClick={() => setTab(item.tab)}>
                     Go
                   </Button>
-                ) : null}
+                )}
               </li>
             );
           })}
