@@ -144,7 +144,7 @@ export function ProfileDropdown({ children }) {
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle}`}>
-              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              { }
               <a href="/billing">
                 <Wallet className="size-4 text-muted-foreground" />
                 <span>Billing &amp; Plans</span>
@@ -188,7 +188,7 @@ export function ProfileDropdown({ children }) {
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle} mb-1`}>
-              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              { }
               <a href="/docs">
                 <BookMarked className="size-4 text-muted-foreground" />
                 <span>Documentation</span>
