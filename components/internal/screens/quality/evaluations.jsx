@@ -151,10 +151,15 @@ export function EvaluationsScreen() {
       description: draft.description?.trim() || "",
     };
     if (draft.id) {
+      const previous = sets.find((s) => s.id === draft.id);
       setSets((prev) => prev.map((s) => (s.id === draft.id ? { ...s, ...clean } : s)));
       toast.success("Eval set updated.");
-      updateEvalSet(draft.id, clean).then((res) => {
-        if (res === false) toast.error("Couldn't save the eval set.");
+      // updateEvalSet resolves to the row or null — there is no separate "false" failure case.
+      updateEvalSet(draft.id, clean).then((saved) => {
+        if (!saved) {
+          if (previous) setSets((prev) => prev.map((s) => (s.id === draft.id ? previous : s)));
+          toast.error("Couldn't save the eval set — reverted.");
+        }
       });
     } else {
       const optimistic = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...clean };
@@ -162,10 +167,23 @@ export function EvaluationsScreen() {
       setCaseCounts((prev) => ({ ...prev, [optimistic.id]: 0 }));
       toast.success("Eval set created.");
       createEvalSet(projectId, clean).then((saved) => {
-        if (saved === null) return;
-        if (!saved) toast.error("Couldn't save the eval set.");
-        else
-          setSets((prev) => prev.map((s) => (s.id === optimistic.id ? saved : s)));
+        if (!saved) {
+          setSets((prev) => prev.filter((s) => s.id !== optimistic.id));
+          setCaseCounts((prev) => {
+            const next = { ...prev };
+            delete next[optimistic.id];
+            return next;
+          });
+          toast.error("Couldn't create the eval set — removed.");
+          return;
+        }
+        setSets((prev) => prev.map((s) => (s.id === optimistic.id ? saved : s)));
+        setCaseCounts((prev) => {
+          const next = { ...prev };
+          delete next[optimistic.id];
+          next[saved.id] = 0;
+          return next;
+        });
       });
     }
     setEditorOpen(false);
@@ -173,10 +191,18 @@ export function EvaluationsScreen() {
   };
 
   const handleDeleteSet = (s) => {
+    const index = sets.findIndex((row) => row.id === s.id);
     setSets((prev) => prev.filter((row) => row.id !== s.id));
     toast.success("Eval set deleted.");
     deleteEvalSet(s.id).then((ok) => {
-      if (ok === false) toast.error("Couldn't delete on the server.");
+      if (!ok) {
+        setSets((prev) => {
+          const next = [...prev];
+          next.splice(index, 0, s);
+          return next;
+        });
+        toast.error("Couldn't delete on the server — restored.");
+      }
     });
   };
 
@@ -191,10 +217,14 @@ export function EvaluationsScreen() {
     const optimistic = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), metrics: null, ...input };
     setRuns((prev) => [optimistic, ...prev]);
     toast.success("Evaluation queued — it runs once the backend is connected.");
+    // createEvalRun resolves to the row or null — there is no separate "false" failure case.
     createEvalRun(projectId, input).then((saved) => {
-      if (saved === null) return;
-      if (!saved) toast.error("Couldn't queue the run.");
-      else setRuns((prev) => prev.map((r) => (r.id === optimistic.id ? saved : r)));
+      if (!saved) {
+        setRuns((prev) => prev.filter((r) => r.id !== optimistic.id));
+        toast.error("Couldn't queue the run — removed.");
+        return;
+      }
+      setRuns((prev) => prev.map((r) => (r.id === optimistic.id ? saved : r)));
     });
     setRunDialogOpen(false);
   };
@@ -416,7 +446,7 @@ export function EvaluationsScreen() {
               Cancel
             </Button>
             <Button
-              className="bg-red-500/90 text-white hover:bg-red-500"
+              variant="destructive"
               onClick={() => {
                 handleDeleteSet(deleteTarget);
                 setDeleteTarget(null);
@@ -499,16 +529,17 @@ function SetEditorDialog({ open, onOpenChange, editing, onSave }) {
 function RunEvaluationDialog({ open, onOpenChange, sets, pipelines, onCreate }) {
   const [evalSetId, setEvalSetId] = useState("");
   const [pipelineId, setPipelineId] = useState("");
+  const [seeded, setSeeded] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    // Deferred so these resets don't run synchronously in the effect body.
-    Promise.resolve().then(() => {
-      setEvalSetId(sets[0]?.id || "");
-      setPipelineId(pipelines[0]?.id || "");
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  // Render-time reset on open, mirroring CaseEditorDialog/SetEditorDialog's seed pattern —
+  // resets the selects once per open, not synchronously inside an effect.
+  if (open && !seeded) {
+    setSeeded(true);
+    setEvalSetId(sets[0]?.id || "");
+    setPipelineId(pipelines[0]?.id || "");
+  } else if (!open && seeded) {
+    setSeeded(false);
+  }
 
   const submit = () => {
     if (!evalSetId || !pipelineId) {

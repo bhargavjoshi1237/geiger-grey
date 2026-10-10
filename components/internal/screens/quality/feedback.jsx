@@ -127,11 +127,18 @@ export function FeedbackScreen() {
   }, [rows]);
 
   const handleResolve = (m, resolved) => {
+    const previousMetadata = m.metadata;
     const nextMetadata = { ...(m.metadata || {}), resolved };
     setRows((prev) => prev.map((r) => (r.id === m.id ? { ...r, metadata: nextMetadata } : r)));
     toast.success(resolved ? "Marked resolved." : "Reopened.");
-    setMessageFeedback(m.id, { metadata: nextMetadata }).then((res) => {
-      if (res === false) toast.error("Couldn't update on the server.");
+    // setMessageFeedback resolves to the row or null — there is no separate "false" failure case.
+    setMessageFeedback(m.id, { metadata: nextMetadata }).then((saved) => {
+      if (!saved) {
+        setRows((prev) =>
+          prev.map((r) => (r.id === m.id ? { ...r, metadata: previousMetadata } : r)),
+        );
+        toast.error("Couldn't update on the server — reverted.");
+      }
     });
   };
 
@@ -150,9 +157,7 @@ export function FeedbackScreen() {
             <p className="truncate text-sm font-medium text-foreground">
               {truncate(m.question, 80)}
             </p>
-            {isResolved(m) ? (
-              <span className="text-[11px] text-emerald-400">Resolved</span>
-            ) : null}
+            {isResolved(m) ? <Badge variant="success">Resolved</Badge> : null}
           </div>
         </div>
       ),

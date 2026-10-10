@@ -47,7 +47,8 @@ const emptyCaseDraft = () => ({ question: "", expectedAnswer: "", expectedSource
 // case straight out of negative/unanswered feedback.
 export function EvalSetSheet({ evalSet, open, onOpenChange, projectId, canManage }) {
   const [cases, setCases] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadedSetId, setLoadedSetId] = useState(null);
+  const loading = !evalSet?.id || loadedSetId !== evalSet.id;
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCase, setEditingCase] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -56,14 +57,10 @@ export function EvalSetSheet({ evalSet, open, onOpenChange, projectId, canManage
   useEffect(() => {
     if (!open || !evalSet?.id) return;
     let alive = true;
-    // Deferred: setLoading(true) must not run synchronously in the effect body.
-    Promise.resolve().then(() => {
-      if (alive) setLoading(true);
-    });
     listEvalCases(projectId, evalSet.id).then((rows) => {
       if (!alive) return;
       setCases(rows ?? []);
-      setLoading(false);
+      setLoadedSetId(evalSet.id);
     });
     return () => {
       alive = false;
@@ -91,10 +88,15 @@ export function EvalSetSheet({ evalSet, open, onOpenChange, projectId, canManage
       expectedSourceIds: draft.expectedSourceIds || [],
     };
     if (draft.id) {
+      const previous = cases.find((c) => c.id === draft.id);
       setCases((prev) => prev.map((c) => (c.id === draft.id ? { ...c, ...clean } : c)));
       toast.success("Case updated.");
-      updateEvalCase(draft.id, clean).then((res) => {
-        if (res === false) toast.error("Couldn't save the case.");
+      // updateEvalCase resolves to the row or null — there is no separate "false" failure case.
+      updateEvalCase(draft.id, clean).then((saved) => {
+        if (!saved) {
+          if (previous) setCases((prev) => prev.map((c) => (c.id === draft.id ? previous : c)));
+          toast.error("Couldn't save the case — reverted.");
+        }
       });
     } else {
       const optimistic = {
@@ -106,9 +108,12 @@ export function EvalSetSheet({ evalSet, open, onOpenChange, projectId, canManage
       setCases((prev) => [optimistic, ...prev]);
       toast.success("Case added.");
       createEvalCase(projectId, { evalSetId: evalSet.id, ...clean }).then((saved) => {
-        if (saved === null) return;
-        if (!saved) toast.error("Couldn't save the case.");
-        else setCases((prev) => prev.map((c) => (c.id === optimistic.id ? saved : c)));
+        if (!saved) {
+          setCases((prev) => prev.filter((c) => c.id !== optimistic.id));
+          toast.error("Couldn't add the case — removed.");
+          return;
+        }
+        setCases((prev) => prev.map((c) => (c.id === optimistic.id ? saved : c)));
       });
     }
     setEditorOpen(false);
@@ -116,10 +121,18 @@ export function EvalSetSheet({ evalSet, open, onOpenChange, projectId, canManage
   };
 
   const handleDelete = (c) => {
+    const index = cases.findIndex((row) => row.id === c.id);
     setCases((prev) => prev.filter((row) => row.id !== c.id));
     toast.success("Case removed.");
     deleteEvalCase(c.id).then((ok) => {
-      if (ok === false) toast.error("Couldn't delete on the server.");
+      if (!ok) {
+        setCases((prev) => {
+          const next = [...prev];
+          next.splice(index, 0, c);
+          return next;
+        });
+        toast.error("Couldn't delete on the server — restored.");
+      }
     });
   };
 
@@ -259,7 +272,7 @@ export function EvalSetSheet({ evalSet, open, onOpenChange, projectId, canManage
               Cancel
             </Button>
             <Button
-              className="bg-red-500/90 text-white hover:bg-red-500"
+              variant="destructive"
               onClick={() => {
                 handleDelete(deleteTarget);
                 setDeleteTarget(null);

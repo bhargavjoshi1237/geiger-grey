@@ -1,11 +1,36 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { listFeedbackMessages, listMessages } from "@/lib/supabase/conversations";
 import { listPipelines } from "@/lib/supabase/pipelines";
 
 import { findPreviousUserMessage } from "./constants";
+
+// Pure fetch + enrichment, no state. Shared by the effect (cancellable) and
+// `reload` (fire-and-forget) below.
+async function fetchFeedbackRows(projectId) {
+  if (!projectId) return { rows: [], pipelines: [] };
+  const [messages, pipelineRows] = await Promise.all([
+    listFeedbackMessages(projectId),
+    listPipelines(projectId),
+  ]);
+  const base = messages ?? [];
+  const conversationIds = [...new Set(base.map((m) => m.conversationId).filter(Boolean))];
+  // N+1: one listMessages call per distinct conversation with feedback, to recover the prior
+  // user turn (the "question") — listFeedbackMessages only joins the conversation's
+  // title/pipeline, not the question text. Acceptable at this phase's data volumes.
+  const threads = await Promise.all(
+    conversationIds.map((id) => listMessages(id).then((list) => [id, list ?? []])),
+  );
+  const threadMap = new Map(threads);
+  const rows = base.map((m) => {
+    const thread = threadMap.get(m.conversationId) || [];
+    const prevUser = findPreviousUserMessage(thread, m.id);
+    return { ...m, question: prevUser?.content || "" };
+  });
+  return { rows, pipelines: pipelineRows ?? [] };
+}
 
 // Loads feedback (assistant messages with feedback or marked unanswered) and
 // enriches each with `question` — the prior user turn in its conversation —
@@ -14,50 +39,31 @@ import { findPreviousUserMessage } from "./constants";
 export function useFeedbackRows(projectId) {
   const [rows, setRows] = useState([]);
   const [pipelines, setPipelines] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const aliveRef = useRef(true);
-
-  const load = () => {
-    if (!projectId) return;
-    setLoading(true);
-    Promise.all([listFeedbackMessages(projectId), listPipelines(projectId)]).then(
-      async ([messages, pipelineRows]) => {
-        const base = messages ?? [];
-        const conversationIds = [
-          ...new Set(base.map((m) => m.conversationId).filter(Boolean)),
-        ];
-        const threads = await Promise.all(
-          conversationIds.map((id) => listMessages(id).then((list) => [id, list ?? []])),
-        );
-        if (!aliveRef.current) return;
-        const threadMap = new Map(threads);
-        const enriched = base.map((m) => {
-          const thread = threadMap.get(m.conversationId) || [];
-          const prevUser = findPreviousUserMessage(thread, m.id);
-          return { ...m, question: prevUser?.content || "" };
-        });
-        setRows(enriched);
-        setPipelines(pipelineRows ?? []);
-        setLoading(false);
-      },
-    );
-  };
+  const [loadedKey, setLoadedKey] = useState(null);
+  const loading = loadedKey !== projectId;
 
   useEffect(() => {
-    aliveRef.current = true;
-    // Deferred so the initial fetch kicks off from a microtask, not
-    // synchronously inside the effect body (which `load` would otherwise do
-    // via its own `setLoading(true)`).
-    Promise.resolve().then(() => {
-      if (aliveRef.current) load();
+    let alive = true;
+    fetchFeedbackRows(projectId).then((result) => {
+      if (!alive) return;
+      setRows(result.rows);
+      setPipelines(result.pipelines);
+      setLoadedKey(projectId);
     });
     return () => {
-      aliveRef.current = false;
+      alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  return { rows, setRows, pipelines, loading, reload: load };
+  const reload = () => {
+    fetchFeedbackRows(projectId).then((result) => {
+      setRows(result.rows);
+      setPipelines(result.pipelines);
+      setLoadedKey(projectId);
+    });
+  };
+
+  return { rows, setRows, pipelines, loading, reload };
 }
 
 export function pipelineName(pipelines, pipelineId) {

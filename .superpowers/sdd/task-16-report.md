@@ -116,3 +116,49 @@ entry — hiding keeps the UI honest about what the user can actually do.
   "cases CRUD" — the "Add from feedback" entry point reuses the same `useFeedbackRows` hook as
   the Feedback screen's own "Add to eval set" dialog, so there's one shared enrichment path for
   both directions of that flow.
+
+## Fix round 1
+
+Addressed the coordinator's review of the initial implementation. Confirmed call shapes against
+the real data modules now on `main` (`lib/supabase/evals.js`, `lib/supabase/conversations.js`,
+`lib/supabase/repository.js`'s `makeRepo`): `create`/`update`/`setMessageFeedback` resolve to the
+row or `null` on any failure (there is no separate `false` branch for those — only `remove`
+returns a plain boolean). My original `if (saved === null) return;` guards on create/update were
+therefore dead code that silently swallowed every failure instead of rolling back.
+
+1. **Rollback on every failed mutation.** `handleSaveCase`/`handleSaveSet` (create: remove the
+   optimistic row on `!saved`; update: capture `previous` before the optimistic patch and restore
+   it on `!saved`), `handleDelete`/`handleDeleteSet` (capture the row's index before removing it,
+   splice it back in at that index on `!ok`), `handleCreateRun` (remove the optimistic run on
+   `!saved`), `handleResolve` (capture `previousMetadata` before the optimistic flip, restore it
+   on `!saved`). All now check truthiness (`!saved`/`!ok`) rather than `=== false`, matching the
+   real modules' actual null-on-failure behavior. Every rollback path also fires a
+   `toast.error(...)` so the revert is visible, not silent.
+2. **Destructive buttons / Badge.** `evaluations.jsx`'s "Delete eval set" and
+   `eval_set_sheet.jsx`'s "Delete case" confirm buttons now use `<Button variant="destructive">`
+   instead of raw `bg-red-500/90` classes. `feedback.jsx`'s "Resolved" tag is now
+   `<Badge variant="success">Resolved</Badge>` instead of a raw `text-emerald-400` span.
+   Status-dot `dotClass` values in `constants.js` (`bg-emerald-400`, `bg-[#737373]`, etc.) were
+   left as-is per the review note — those are the suite's established `StatusPill` convention.
+3. **Removed all `Promise.resolve().then()` setState deferrals.**
+   - `use_feedback_rows.js`: extracted the fetch+enrich logic into a state-free async
+     `fetchFeedbackRows(projectId)` helper; the effect now uses a per-run `let alive = true`
+     closure (no more shared `aliveRef`) and calls that helper directly — since nothing inside
+     the effect's synchronous body calls `setState` anymore (all state is set inside the
+     `.then()`), the `react-hooks/set-state-in-effect` rule no longer fires and no deferral is
+     needed. `loading` is now derived as `loadedKey !== projectId`, set only inside `.then()`.
+   - `eval_set_sheet.jsx`: same treatment — `loading` is `!evalSet?.id || loadedSetId !== evalSet.id`,
+     with `setLoadedSetId(evalSet.id)` set only inside the fetch's `.then()`; effect keeps a
+     per-run `let alive = true` closure.
+   - `evaluations.jsx`'s `RunEvaluationDialog`: replaced the effect with the render-time
+     "reset on key change" pattern already used by `CaseEditorDialog`/`SetEditorDialog` in this
+     task (a `seeded` flag flipped in the render body, not inside `useEffect`) — resets the
+     eval-set/pipeline selects once per dialog open without touching `useEffect` at all.
+4. **N+1 comment.** Added a one-line comment in `use_feedback_rows.js` above the per-conversation
+   `listMessages` fan-out explaining the N+1 and why it's acceptable at this phase's volumes.
+   `listEvalCases` per set in `evaluations.jsx` is unchanged, per the review note.
+
+Verification: `npx eslint components/internal/screens/quality --max-warnings 0` → clean (ran
+twice, after the edits above).
+
+Commit: `fix(grey): quality review fixes` on this worktree's branch.
