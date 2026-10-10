@@ -90,6 +90,13 @@ export function freshnessOf(source) {
   const verifiedAt = source.verifiedAt ? new Date(source.verifiedAt).getTime() : null;
   const now = Date.now();
 
+  // A verification performed on or after the review's due date supersedes
+  // it — the source has been checked since, so "Mark verified" must
+  // visibly clear a "Stale"/"Review due" badge rather than leaving it
+  // behind a review date that now predates the check.
+  if (verifiedAt && Number.isFinite(verifiedAt) && reviewDueAt && verifiedAt >= reviewDueAt) {
+    return "verified";
+  }
   if (reviewDueAt && Number.isFinite(reviewDueAt) && reviewDueAt < now) return "stale";
   if (reviewDueAt && Number.isFinite(reviewDueAt) && reviewDueAt - now <= REVIEW_DUE_SOON_MS) {
     return "review_due";
@@ -148,4 +155,19 @@ export function sourceRef(id) {
 export function snapshotPreset(preset) {
   if (!preset) return {};
   return { id: preset.id, name: preset.name, tier: preset.tier, config: preset.config ?? {} };
+}
+
+// The one queued-job shape used by every entry point (upload, import, add
+// URL, re-ingest) — keeps `presetSnapshot`/`stage`/`progress` consistent
+// without repeating the literal at each call site.
+export function buildQueuedJob({ kbId, sourceId, preset, estimatedCost = null }) {
+  return {
+    kbId,
+    sourceId,
+    presetSnapshot: snapshotPreset(preset),
+    status: "queued",
+    stage: "parse",
+    progress: 0,
+    estimatedCost,
+  };
 }

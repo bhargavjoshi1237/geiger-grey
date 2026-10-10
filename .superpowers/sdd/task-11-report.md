@@ -51,3 +51,15 @@ export function freshnessOf(source) // "verified" | "review_due" | "stale" | "no
 ## Concerns for the controller
 - See assumptions 3 and 4 above — worth a quick cross-check once Task 7 (graph.js's `listMentions` signature) and the permission catalog are finalized.
 - `SourcesTable` is fully self-contained (own data loading, toolbar, upload dialog) as required so Task 10 can embed it directly at `@/components/internal/screens/sources/sources_table` with `kbId` set.
+
+## Fix round 1
+
+Addressed the coordinator's review fixes:
+
+1. **`createJobs` failure handling.** `createJobs` (the real module on main) returns `[]` on failure, so every call site now checks `!created?.length` (not just `!created`): `sources_table.jsx` `handleReingest`, and `upload_sources_dialog.jsx` `startUpload`/`startImport`/`startAddUrl`. When a source was already created but the job failed, the source is marked `status: "failed"` via `updateSource` (best effort) instead of being left "queued" with no job behind it. `startUpload`/`startImport` now track `queued` vs `failed` counts and report both in the summary toast (e.g. "2 sources queued, 1 failed.").
+2. **Optimistic-update rollback.** `handleMarkVerified`, `handleSaveFreshness`, and `handleReingest` (`sources_table.jsx`) and `handleCancel` (`ingestion_jobs.jsx`) all capture the previous value(s) before the optimistic `setState`, and revert to them on failure (`handleSaveFreshness` reverts exactly the keys present in the patch, generically).
+3. **Guards in `upload_sources_dialog.jsx`.** `startUpload` now null-guards `preset` before calling `estimateFileCost` (toasts and aborts if no preset is selected). `addFiles` wraps `analyzeFile` in try/catch — a failing file is marked `analysisError: true`, shown as "Couldn't analyze" with an `AlertTriangle` icon, and naturally excluded from upload (its `analysis` stays `null`, so the existing `files.filter((f) => f.analysis)` ready-list skips it). All three `start*` handlers now wrap their body in `try { ... } finally { setBusy(false); }` so `busy` always resets even if something throws.
+4. **DRY.** Added `buildQueuedJob({ kbId, sourceId, preset, estimatedCost })` to `constants.js` (wraps `snapshotPreset` + the fixed `status/stage/progress` shape) and switched all four call sites (`sources_table.jsx` reingest; `upload_sources_dialog.jsx` startUpload/startImport/startAddUrl) to use it instead of repeating the job-object literal.
+5. **Minor.** Delete-confirmation dialog's button icon in `sources_table.jsx` changed from `Ban` to `Trash2` (matching the row-action icon). `freshnessOf` in `constants.js` now reads a source as "Verified" when `verifiedAt >= reviewDueAt` (checked before the stale/review-due branches), so "Mark verified" visibly clears a "Stale"/"Review due" badge instead of leaving it behind an older review date.
+
+Verification: `npx eslint components/internal/screens/sources --max-warnings 0` → 0 errors, 0 warnings.

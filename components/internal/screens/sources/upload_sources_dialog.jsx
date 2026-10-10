@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   FileStack,
   Globe,
   Loader2,
@@ -36,13 +37,13 @@ import { Field, EmptyState } from "@/components/internal/shared/screen_kit";
 import { Dropzone } from "@/components/internal/shared/dropzone";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
 import { listPresets } from "@/lib/supabase/ingestion_presets";
-import { createSource, uploadSourceFile } from "@/lib/supabase/sources";
+import { createSource, updateSource, uploadSourceFile } from "@/lib/supabase/sources";
 import { createJobs } from "@/lib/supabase/ingestion_jobs";
 import { listImportableAssets, listImportableNotes } from "@/lib/supabase/suite_imports";
 import { analyzeFile } from "@/lib/grey/file_analysis";
 import { estimateFileCost, estimateTotal } from "@/lib/grey/cost";
 import { formatBytes, formatCurrency, formatDuration } from "@/lib/grey/format";
-import { SOURCE_KIND_ICONS, SOURCE_KIND_LABELS, snapshotPreset } from "./constants";
+import { SOURCE_KIND_ICONS, SOURCE_KIND_LABELS, buildQueuedJob } from "./constants";
 
 function kindFromMime(mime) {
   if (!mime) return "document";
@@ -150,12 +151,18 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
       id: crypto.randomUUID(),
       file,
       analysis: null,
+      analysisError: false,
       progress: 0,
     }));
     setFiles((prev) => [...prev, ...entries]);
     entries.forEach(async (entry) => {
-      const analysis = await analyzeFile(entry.file);
-      setFiles((prev) => prev.map((f) => (f.id === entry.id ? { ...f, analysis } : f)));
+      try {
+        const analysis = await analyzeFile(entry.file);
+        setFiles((prev) => prev.map((f) => (f.id === entry.id ? { ...f, analysis } : f)));
+      } catch (error) {
+        console.error("[upload_sources_dialog.addFiles]", error);
+        setFiles((prev) => prev.map((f) => (f.id === entry.id ? { ...f, analysisError: true } : f)));
+      }
     });
   };
 
@@ -172,64 +179,77 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
       toast.error("Choose a knowledge base first.");
       return;
     }
+    if (!preset) {
+      toast.error("Choose an ingestion preset first.");
+      return;
+    }
     const ready = files.filter((f) => f.analysis);
     if (!ready.length) {
       toast.error("Add at least one file.");
       return;
     }
     setBusy(true);
-    let ok = 0;
-    for (const entry of ready) {
-      const id = crypto.randomUUID();
-      const storagePath = await uploadSourceFile({
-        projectId,
-        kbId,
-        sourceId: id,
-        file: entry.file,
-        onProgress: (pct) => setFiles((prev) => prev.map((f) => (f.id === entry.id ? { ...f, progress: pct } : f))),
-      });
-      if (!storagePath) {
-        toast.error(`Couldn't upload ${entry.file.name}.`);
-        continue;
-      }
-      const estimate = estimateFileCost(fileAnalysisShape(entry.analysis), preset);
-      const created = await createSource(projectId, {
-        id,
-        kbId,
-        name: entry.file.name,
-        kind: entry.analysis.kind,
-        origin: "upload",
-        mime: entry.analysis.mime,
-        bytes: entry.analysis.bytes,
-        pageCount: entry.analysis.pageCount,
-        durationMs: entry.analysis.durationMs,
-        tokenCount: entry.analysis.tokenCount,
-        storagePath,
-        status: "queued",
-      });
-      if (!created) {
-        toast.error(`Couldn't save ${entry.file.name}.`);
-        continue;
-      }
-      await createJobs(projectId, [
-        {
+    try {
+      let queued = 0;
+      let failed = 0;
+      for (const entry of ready) {
+        const id = crypto.randomUUID();
+        const storagePath = await uploadSourceFile({
+          projectId,
           kbId,
           sourceId: id,
-          presetSnapshot: snapshotPreset(preset),
+          file: entry.file,
+          onProgress: (pct) => setFiles((prev) => prev.map((f) => (f.id === entry.id ? { ...f, progress: pct } : f))),
+        });
+        if (!storagePath) {
+          toast.error(`Couldn't upload ${entry.file.name}.`);
+          failed += 1;
+          continue;
+        }
+        const estimate = estimateFileCost(fileAnalysisShape(entry.analysis), preset);
+        const estimatedCost = Number(((estimate.low + estimate.high) / 2).toFixed(6));
+        const created = await createSource(projectId, {
+          id,
+          kbId,
+          name: entry.file.name,
+          kind: entry.analysis.kind,
+          origin: "upload",
+          mime: entry.analysis.mime,
+          bytes: entry.analysis.bytes,
+          pageCount: entry.analysis.pageCount,
+          durationMs: entry.analysis.durationMs,
+          tokenCount: entry.analysis.tokenCount,
+          storagePath,
           status: "queued",
-          stage: "parse",
-          progress: 0,
-          estimatedCost: Number(((estimate.low + estimate.high) / 2).toFixed(6)),
-        },
-      ]);
-      ok += 1;
-    }
-    setBusy(false);
-    if (ok) {
-      toast.success(`${ok} source${ok === 1 ? "" : "s"} queued for ingestion.`);
-      onUploaded?.();
-    } else {
-      toast.error("No sources were queued.");
+        });
+        if (!created) {
+          toast.error(`Couldn't save ${entry.file.name}.`);
+          failed += 1;
+          continue;
+        }
+        const jobs = await createJobs(projectId, [
+          buildQueuedJob({ kbId, sourceId: id, preset, estimatedCost }),
+        ]);
+        if (!jobs?.length) {
+          toast.error(`${entry.file.name} was saved but ingestion couldn't be queued.`);
+          await updateSource(id, { status: "failed" });
+          failed += 1;
+          continue;
+        }
+        queued += 1;
+      }
+      if (queued) {
+        toast.success(
+          failed
+            ? `${queued} source${queued === 1 ? "" : "s"} queued, ${failed} failed.`
+            : `${queued} source${queued === 1 ? "" : "s"} queued for ingestion.`,
+        );
+        onUploaded?.();
+      } else {
+        toast.error("No sources were queued.");
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -260,41 +280,49 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
       return;
     }
     setBusy(true);
-    let ok = 0;
-    for (const item of items) {
-      const id = crypto.randomUUID();
-      const created = await createSource(projectId, {
-        id,
-        kbId,
-        name: item.name || item.title || "Untitled",
-        kind: kindFromMime(item.mime),
-        origin: item.origin,
-        originRef: item.id,
-        mime: item.mime || null,
-        bytes: item.bytes || null,
-        status: "queued",
-      });
-      if (!created) continue;
-      await createJobs(projectId, [
-        {
+    try {
+      let queued = 0;
+      let failed = 0;
+      for (const item of items) {
+        const id = crypto.randomUUID();
+        const created = await createSource(projectId, {
+          id,
           kbId,
-          sourceId: id,
-          presetSnapshot: snapshotPreset(preset),
+          name: item.name || item.title || "Untitled",
+          kind: kindFromMime(item.mime),
+          origin: item.origin,
+          originRef: item.id,
+          mime: item.mime || null,
+          bytes: item.bytes || null,
           status: "queued",
-          stage: "parse",
-          progress: 0,
-          estimatedCost: null,
-        },
-      ]);
-      ok += 1;
-    }
-    setBusy(false);
-    if (ok) {
-      toast.success(`${ok} item${ok === 1 ? "" : "s"} imported.`);
-      setSelectedImport(new Set());
-      onUploaded?.();
-    } else {
-      toast.error("Nothing was imported.");
+        });
+        if (!created) {
+          failed += 1;
+          continue;
+        }
+        const jobs = await createJobs(projectId, [
+          buildQueuedJob({ kbId, sourceId: id, preset, estimatedCost: null }),
+        ]);
+        if (!jobs?.length) {
+          await updateSource(id, { status: "failed" });
+          failed += 1;
+          continue;
+        }
+        queued += 1;
+      }
+      if (queued) {
+        toast.success(
+          failed
+            ? `${queued} imported, ${failed} failed.`
+            : `${queued} item${queued === 1 ? "" : "s"} imported.`,
+        );
+        setSelectedImport(new Set());
+        onUploaded?.();
+      } else {
+        toast.error("Nothing was imported.");
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -316,35 +344,35 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
       // Keep the raw string as the name when it isn't a parseable URL.
     }
     setBusy(true);
-    const id = crypto.randomUUID();
-    const created = await createSource(projectId, {
-      id,
-      kbId,
-      name,
-      kind: "web",
-      origin: "url",
-      originRef: value,
-      status: "queued",
-    });
-    if (created) {
-      await createJobs(projectId, [
-        {
-          kbId,
-          sourceId: id,
-          presetSnapshot: snapshotPreset(preset),
-          status: "queued",
-          stage: "parse",
-          progress: 0,
-          estimatedCost: null,
-        },
+    try {
+      const id = crypto.randomUUID();
+      const created = await createSource(projectId, {
+        id,
+        kbId,
+        name,
+        kind: "web",
+        origin: "url",
+        originRef: value,
+        status: "queued",
+      });
+      if (!created) {
+        toast.error("Couldn't add the URL.");
+        return;
+      }
+      const jobs = await createJobs(projectId, [
+        buildQueuedJob({ kbId, sourceId: id, preset, estimatedCost: null }),
       ]);
+      if (!jobs?.length) {
+        toast.error("The URL was saved but ingestion couldn't be queued.");
+        await updateSource(id, { status: "failed" });
+        return;
+      }
       toast.success("URL queued for ingestion.");
       setUrlValue("");
       onUploaded?.();
-    } else {
-      toast.error("Couldn't add the URL.");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   return (
@@ -411,14 +439,22 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
             {files.length ? (
               <div className="space-y-2">
                 {files.map((entry) => {
-                  const Icon = entry.analysis ? SOURCE_KIND_ICONS[entry.analysis.kind] || FileStack : Loader2;
+                  const Icon = entry.analysis
+                    ? SOURCE_KIND_ICONS[entry.analysis.kind] || FileStack
+                    : entry.analysisError
+                      ? AlertTriangle
+                      : Loader2;
                   const estimate = entry.analysis && preset ? estimateFileCost(fileAnalysisShape(entry.analysis), preset) : null;
                   return (
                     <div
                       key={entry.id}
                       className="flex items-center gap-3 rounded-lg border border-border bg-surface-card px-3 py-2"
                     >
-                      <Icon className={`h-4 w-4 shrink-0 text-text-secondary ${entry.analysis ? "" : "animate-spin"}`} />
+                      <Icon
+                        className={`h-4 w-4 shrink-0 ${entry.analysisError ? "text-destructive-text" : "text-text-secondary"} ${
+                          !entry.analysis && !entry.analysisError ? "animate-spin" : ""
+                        }`}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{entry.file.name}</p>
                         <p className="text-xs text-text-tertiary">
@@ -431,7 +467,9 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
                                     ? ` · ${formatDuration(entry.analysis.durationMs)}`
                                     : ""
                               }`
-                            : " · Analyzing…"}
+                            : entry.analysisError
+                              ? " · Couldn't analyze"
+                              : " · Analyzing…"}
                         </p>
                         {entry.progress > 0 && entry.progress < 100 ? (
                           <Progress value={entry.progress} className="mt-1.5 h-1" />

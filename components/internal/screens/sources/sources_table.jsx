@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Ban,
   CalendarClock,
   Download,
   Eye,
@@ -60,9 +59,9 @@ import {
   SOURCE_ORIGIN_LABELS,
   SOURCE_STATUS_FILTER_OPTIONS,
   SOURCE_STATUS_MAP,
+  buildQueuedJob,
   describeSourceSize,
   freshnessOf,
-  snapshotPreset,
 } from "./constants";
 
 // Full Sources list UI: toolbar (search + filters), table, upload dialog and
@@ -174,8 +173,8 @@ export function SourcesTable({ projectId, kbId }) {
   };
 
   const handleReingest = async (source) => {
+    const previousStatus = source.status;
     setSources((prev) => prev.map((s) => (s.id === source.id ? { ...s, status: "queued" } : s)));
-    toast.success("Re-ingestion queued.");
     const preset = resolvePreset(source);
     const estimate = preset
       ? estimateFileCost(
@@ -188,36 +187,54 @@ export function SourcesTable({ projectId, kbId }) {
           preset,
         )
       : null;
-    const [updated, jobs] = await Promise.all([
+    const estimatedCost = estimate ? Number(((estimate.low + estimate.high) / 2).toFixed(6)) : null;
+    const [updated, created] = await Promise.all([
       updateSource(source.id, { status: "queued" }),
       createJobs(projectId, [
-        {
-          kbId: source.kbId,
-          sourceId: source.id,
-          presetSnapshot: snapshotPreset(preset),
-          status: "queued",
-          stage: "parse",
-          progress: 0,
-          estimatedCost: estimate ? Number(((estimate.low + estimate.high) / 2).toFixed(6)) : null,
-        },
+        buildQueuedJob({ kbId: source.kbId, sourceId: source.id, preset, estimatedCost }),
       ]),
     ]);
-    if (!updated || !jobs) toast.error("Couldn't queue re-ingestion on the server.");
+    if (updated && created?.length) {
+      toast.success("Re-ingestion queued.");
+      return;
+    }
+    // No job exists to back the optimistic "queued" state — revert it (and
+    // the server row, best effort) rather than leave the source stuck
+    // showing "queued" with nothing actually running.
+    toast.error("Couldn't queue re-ingestion.");
+    setSources((prev) => prev.map((s) => (s.id === source.id ? { ...s, status: previousStatus } : s)));
+    await updateSource(source.id, { status: previousStatus });
   };
 
   const handleMarkVerified = async (source) => {
+    const previousVerifiedAt = source.verifiedAt ?? null;
     const now = new Date().toISOString();
     setSources((prev) => prev.map((s) => (s.id === source.id ? { ...s, verifiedAt: now } : s)));
     toast.success("Marked verified.");
     const updated = await updateSource(source.id, { verifiedAt: now });
-    if (!updated) toast.error("Couldn't save verification.");
+    if (!updated) {
+      toast.error("Couldn't save verification.");
+      setSources((prev) =>
+        prev.map((s) => (s.id === source.id ? { ...s, verifiedAt: previousVerifiedAt } : s)),
+      );
+    }
   };
 
   const handleSaveFreshness = async (id, patch) => {
+    const previous = sources.find((s) => s.id === id);
+    const previousPatch = previous
+      ? Object.fromEntries(Object.keys(patch).map((key) => [key, previous[key] ?? null]))
+      : null;
     setSources((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     const updated = await updateSource(id, patch);
-    if (!updated) toast.error("Couldn't save owner/review date.");
-    else toast.success("Saved.");
+    if (updated) {
+      toast.success("Saved.");
+    } else {
+      toast.error("Couldn't save owner/review date.");
+      if (previousPatch) {
+        setSources((prev) => prev.map((s) => (s.id === id ? { ...s, ...previousPatch } : s)));
+      }
+    }
   };
 
   const handleDownload = async (source) => {
@@ -480,7 +497,7 @@ export function SourcesTable({ projectId, kbId }) {
                 setDeleteTarget(null);
               }}
             >
-              <Ban className="h-4 w-4" /> Delete
+              <Trash2 className="h-4 w-4" /> Delete
             </Button>
           </DialogFooter>
         </DialogContent>

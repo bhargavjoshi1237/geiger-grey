@@ -139,10 +139,14 @@ export function IngestionJobsScreen() {
 
   const handleCancel = async (job) => {
     if (job.status !== "queued") return;
+    const previousStatus = job.status;
     setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: "cancelled" } : j)));
     toast.success("Job cancelled.");
     const updated = await updateJob(job.id, { status: "cancelled" });
-    if (!updated) toast.error("Couldn't cancel the job on the server.");
+    if (!updated) {
+      toast.error("Couldn't cancel the job on the server.");
+      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: previousStatus } : j)));
+    }
   };
 
   const columns = [
