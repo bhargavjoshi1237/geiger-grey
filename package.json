@@ -13,7 +13,7 @@
     "db:new": "geiger-orm create",
     "db:seed": "geiger-orm seed",
     "ui:update": "npm update @geiger/ui",
-    "test": "node --test"
+    "test": "node --test \"lib/**/*.test.js\" \"*.test.js\""
   },
   "dependencies": {
     "@geiger/notify": "file:../geiger-notify",
