@@ -12,7 +12,7 @@ import { Badge } from "@geiger/ui/badge";
 import { Avatar, AvatarFallback } from "@geiger/ui/avatar";
 import { formatRelativeTime, initialsOf } from "../constants";
 
-export default function InvitationsTab({ invites, roleById, onRevoke, onInvite }) {
+export default function InvitationsTab({ invites, roleById, canInvite, onRevoke, onInvite }) {
   if (!invites.length) {
     return (
       <SectionCard>
@@ -21,9 +21,11 @@ export default function InvitationsTab({ invites, roleById, onRevoke, onInvite }
           title="No pending invitations"
           description="Invited people who haven't joined yet appear here."
           action={
-            <Button onClick={onInvite} className="bg-primary text-primary-foreground">
-              <UserPlus className="h-4 w-4" /> Invite people
-            </Button>
+            canInvite ? (
+              <Button onClick={onInvite} className="bg-primary text-primary-foreground">
+                <UserPlus className="h-4 w-4" /> Invite people
+              </Button>
+            ) : null
           }
         />
       </SectionCard>
@@ -51,9 +53,11 @@ export default function InvitationsTab({ invites, roleById, onRevoke, onInvite }
               </div>
               <div className="flex items-center gap-3">
                 <Badge variant="neutral">{role?.name || "No role"}</Badge>
-                <Button variant="outline" size="sm" onClick={() => onRevoke(m)}>
-                  Revoke
-                </Button>
+                {canInvite ? (
+                  <Button variant="outline" size="sm" onClick={() => onRevoke(m)}>
+                    Revoke
+                  </Button>
+                ) : null}
               </div>
             </div>
           );

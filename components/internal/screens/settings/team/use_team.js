@@ -9,7 +9,9 @@ import { getUser } from "@/lib/supabase/user";
 import {
   ensureSystemRoles,
   listGrants,
+  listRoles,
   revokeGrant,
+  setGrantStatus,
   setMemberRole,
 } from "@/lib/supabase/rbac";
 import {
@@ -31,10 +33,13 @@ import { DEFAULT_SEAT_LIMIT } from "../constants";
 // renders what this returns.
 export function useTeam() {
   const { projectId } = useProject();
-  const { can, userId: myUserId, refresh: refreshRbac } = useRbac();
+  const { can, available, isOwner, userId: myUserId, refresh: refreshRbac } = useRbac();
 
   const canInvite = can("grey.team.invite");
   const canAssign = can("grey.team.assign");
+  // Seeding roles and syncing the org roster are admin writes; everyone else only reads.
+  const canSeedRoles = available && (isOwner || can("grey.role.manage"));
+  const canSync = available && (isOwner || canAssign);
 
   const [members, setMembers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -50,6 +55,7 @@ export function useTeam() {
   const seatLimit = DEFAULT_SEAT_LIMIT;
 
   useEffect(() => {
+    if (!available) return;
     let alive = true;
     getUser().then((u) => {
       if (!alive) return;
@@ -59,13 +65,14 @@ export function useTeam() {
     (async () => {
       // Fills any missing system role from geiger-rbac.config.js; a no-op once
       // the project has them all.
-      const rolesList = (await ensureSystemRoles(projectId, null)) ?? [];
+      const rolesList =
+        (canSeedRoles ? await ensureSystemRoles(projectId, null) : await listRoles(projectId)) ?? [];
       const defaultRole =
         rolesList.find((r) => r.key === "member") ||
         rolesList[rolesList.length - 1] ||
         null;
       // Project real org members into the overlay, then read the roster.
-      await syncTeam(projectId, defaultRole?.id ?? null);
+      if (canSync) await syncTeam(projectId, defaultRole?.id ?? null);
       const memberRows = await listMembers(projectId);
       if (!alive) return;
       setRoles(rolesList);
@@ -78,7 +85,7 @@ export function useTeam() {
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, available, canSeedRoles, canSync]);
 
   // --- Derived -------------------------------------------------------------
 
@@ -229,18 +236,45 @@ export function useTeam() {
     audit("role_changed", member, { role: roleById[roleId]?.name });
   };
 
+  // The grant status is what actually pauses access (rbac_allows only reads
+  // active grants); the roster status mirrors it for display.
   const toggleSuspend = async (member) => {
     const next = member.status === "suspended" ? "active" : "suspended";
+    if (next === "suspended" && isLastOwner(member)) {
+      toast.error(
+        "This is the workspace's last owner — give someone else the Owner role first.",
+      );
+      return;
+    }
+    const from = next === "suspended" ? "active" : "suspended";
+    const memberGrants = member.userId
+      ? grants.filter((g) => g.userId === member.userId && !g.deletedAt && g.status === from)
+      : [];
+
     patchMember(member.id, { status: next });
-    const saved = await updateMember(member.id, { status: next });
-    if (saved) {
-      audit(next === "suspended" ? "suspended" : "status_changed", member, {
-        status: next,
-      });
-    } else {
+    const changed = [];
+    for (const grant of memberGrants) {
+      const updated = await setGrantStatus(grant.id, next);
+      if (!updated) break;
+      changed.push(updated);
+    }
+    const saved =
+      changed.length === memberGrants.length && (await updateMember(member.id, { status: next }));
+    if (!saved) {
+      // Put back whatever grants already flipped so access matches the roster again.
+      for (const grant of changed) await setGrantStatus(grant.id, from);
       patchMember(member.id, { status: member.status });
       toast.error("Couldn't update the member.");
+      return;
     }
+    if (changed.length) {
+      const byId = new Map(changed.map((g) => [g.id, g]));
+      setGrants((prev) => prev.map((g) => byId.get(g.id) || g));
+      if (member.userId === myUserId) refreshRbac();
+    }
+    audit(next === "suspended" ? "suspended" : "status_changed", member, {
+      status: next,
+    });
   };
 
   const setMemberGroups = async (member, groupIds) => {

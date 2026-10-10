@@ -15,6 +15,7 @@ import { useOptionalProject } from "@/context/project-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { getUser } from "@/lib/supabase/user";
 import {
+  canAdministerRoles,
   ensureMembership,
   ensureSystemRoles,
   listRoles,
@@ -81,8 +82,11 @@ export function RbacProvider({ children }) {
     ]);
 
     if (grantRows && grantRows.length === 0) {
-      const seeded = await ensureSystemRoles(projectId, uid);
-      if (seeded?.length) roleRows = seeded;
+      // A grant-less caller has no can() yet, so ask the database whether they may seed the catalog.
+      if (await canAdministerRoles(projectId)) {
+        const seeded = await ensureSystemRoles(projectId, uid);
+        if (seeded?.length) roleRows = seeded;
+      }
       const fallback = (roleRows || []).find((r) => r.key === "member") || null;
       if (await ensureMembership(projectId, fallback?.id ?? null)) {
         grantRows = (await listUserGrants(projectId, uid)) ?? grantRows;

@@ -244,6 +244,7 @@ export function TeamMembersScreen() {
         <InvitationsTab
           invites={invites}
           roleById={roleById}
+          canInvite={canInvite}
           onRevoke={revokeInvite}
           onInvite={openInvite}
         />

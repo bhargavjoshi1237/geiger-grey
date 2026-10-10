@@ -25,9 +25,11 @@
 --         'suspended' row, and only honours an 'invited' row's role while it
 --         is still scoped to this project.
 --       - sync_project_team: requires coalesce(auth.role(), '') =
---         'service_role' or grey.can_administer_roles(project_id); never
---         trusts a caller-supplied default role either — it resolves the
---         project's own 'member' role server-side.
+--         'service_role', grey.can_administer_roles(project_id) or a
+--         grey.team.assign grant; never trusts a caller-supplied default
+--         role either — it resolves the project's own 'member' role
+--         server-side; never re-adds a removed member (soft-deleted roster
+--         row or revoked grant).
 --       - grey.check_role_grant_project(): a trigger on grey.role_grants
 --         enforcing that a grant's role actually belongs to the grant's
 --         project (or is a null-project suite template) — closes the gap
@@ -423,6 +425,26 @@ revoke all on function grey.rbac_ensure_membership(uuid, uuid) from public, anon
 grant execute on function grey.rbac_ensure_membership(uuid, uuid) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
+-- True when the user's access to the project was revoked: they hold a
+-- soft-deleted grant and no live one. A live-only grant (e.g. the owner
+-- backfill, which has no roster row yet) does not count, so sync still lists
+-- that person.
+-- ---------------------------------------------------------------------------
+create or replace function grey.team_member_revoked(p_project_id uuid, p_user uuid)
+returns boolean language sql stable security definer set search_path = public, grey as $$
+  select exists (
+    select 1 from grey.role_grants g
+    where g.project_id = p_project_id and g.user_id = p_user and g.deleted_at is not null
+  ) and not exists (
+    select 1 from grey.role_grants g
+    where g.project_id = p_project_id and g.user_id = p_user and g.deleted_at is null
+  );
+$$;
+
+revoke all on function grey.team_member_revoked(uuid, uuid) from public, anon, authenticated;
+grant execute on function grey.team_member_revoked(uuid, uuid) to service_role;
+
+-- ---------------------------------------------------------------------------
 -- Bulk sync — hardened final body. Gated: only service_role or someone who
 -- can already administer this project's roles may run it. The authorization
 -- raise sits OUTSIDE the exception-guarded block below, so it is never
@@ -447,7 +469,9 @@ begin
     return 0;
   end if;
 
-  if coalesce(auth.role(), '') <> 'service_role' and not grey.can_administer_roles(p_project_id) then
+  if coalesce(auth.role(), '') <> 'service_role'
+     and not grey.can_administer_roles(p_project_id)
+     and not grey.rbac_allows('grey.team.assign', p_project_id) then
     raise exception 'Project role administration required' using errcode = '42501';
   end if;
 
@@ -483,12 +507,13 @@ begin
       from public.organization_users ou
       join auth.users u on u.id = ou."user"
       where ou."organization" = v_org
+        -- Any roster row, live or soft-deleted: a removed member stays removed.
         and not exists (
           select 1 from grey.project_members m
           where m.project_id = p_project_id
             and m.user_id = u.id
-            and m.deleted_at is null
-        );
+        )
+        and not grey.team_member_revoked(p_project_id, u.id);
 
       get diagnostics v_count = row_count;
     end if;
@@ -515,8 +540,8 @@ begin
           select 1 from grey.project_members m
           where m.project_id = p_project_id
             and m.user_id = v_creator
-            and m.deleted_at is null
-        );
+        )
+        and not grey.team_member_revoked(p_project_id, v_creator);
     end if;
 
     insert into grey.role_grants (project_id, user_id, role_id, status)
@@ -568,36 +593,58 @@ $$;
 revoke all on function grey.can_administer_roles(uuid) from public, anon;
 grant execute on function grey.can_administer_roles(uuid) to authenticated, service_role;
 
+-- Each guard also admits a grey grant carrying the matching permission, so a
+-- project Admin/Manager role works without an org owner/admin seat:
+--   public.roles writes     -> grey.role.manage
+--   role_grants writes      -> grey.team.assign
+--   project_members insert  -> grey.team.invite (pending, account-less invites only)
+--   project_members update  -> grey.team.assign, or grey.team.invite on pending invites (revoking one)
 drop policy if exists grey_roles_insert_guard on public.roles;
 create policy grey_roles_insert_guard on public.roles as restrictive for insert to authenticated
-  with check (grey.can_administer_roles(project_id));
+  with check (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.role.manage', project_id));
 drop policy if exists grey_roles_update_guard on public.roles;
 create policy grey_roles_update_guard on public.roles as restrictive for update to authenticated
-  using (grey.can_administer_roles(project_id)) with check (grey.can_administer_roles(project_id));
+  using (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.role.manage', project_id))
+  with check (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.role.manage', project_id));
 drop policy if exists grey_roles_delete_guard on public.roles;
 create policy grey_roles_delete_guard on public.roles as restrictive for delete to authenticated
-  using (grey.can_administer_roles(project_id));
+  using (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.role.manage', project_id));
 
 drop policy if exists grey_grants_insert_guard on grey.role_grants;
 create policy grey_grants_insert_guard on grey.role_grants as restrictive for insert to authenticated
-  with check (grey.can_administer_roles(project_id));
+  with check (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.team.assign', project_id));
 drop policy if exists grey_grants_update_guard on grey.role_grants;
 create policy grey_grants_update_guard on grey.role_grants as restrictive for update to authenticated
-  using (grey.can_administer_roles(project_id)) with check (grey.can_administer_roles(project_id));
+  using (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.team.assign', project_id))
+  with check (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.team.assign', project_id));
 drop policy if exists grey_grants_delete_guard on grey.role_grants;
 create policy grey_grants_delete_guard on grey.role_grants as restrictive for delete to authenticated
-  using (grey.can_administer_roles(project_id));
+  using (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.team.assign', project_id));
 
--- Explicit onboarding invitations must be created by role administrators.
+-- Explicit onboarding invitations must be created by role administrators, or
+-- by an inviter, who may only create and revoke pending, account-less rows.
 drop policy if exists grey_roster_insert_guard on grey.project_members;
 create policy grey_roster_insert_guard on grey.project_members as restrictive for insert to authenticated
-  with check (grey.can_administer_roles(project_id));
+  with check (
+    grey.can_administer_roles(project_id)
+    or grey.rbac_allows('grey.team.assign', project_id)
+    or (status = 'invited' and user_id is null and grey.rbac_allows('grey.team.invite', project_id))
+  );
 drop policy if exists grey_roster_update_guard on grey.project_members;
 create policy grey_roster_update_guard on grey.project_members as restrictive for update to authenticated
-  using (grey.can_administer_roles(project_id)) with check (grey.can_administer_roles(project_id));
+  using (
+    grey.can_administer_roles(project_id)
+    or grey.rbac_allows('grey.team.assign', project_id)
+    or (status = 'invited' and user_id is null and grey.rbac_allows('grey.team.invite', project_id))
+  )
+  with check (
+    grey.can_administer_roles(project_id)
+    or grey.rbac_allows('grey.team.assign', project_id)
+    or (status = 'invited' and user_id is null and grey.rbac_allows('grey.team.invite', project_id))
+  );
 drop policy if exists grey_roster_delete_guard on grey.project_members;
 create policy grey_roster_delete_guard on grey.project_members as restrictive for delete to authenticated
-  using (grey.can_administer_roles(project_id));
+  using (grey.can_administer_roles(project_id) or grey.rbac_allows('grey.team.assign', project_id));
 
 -- ---------------------------------------------------------------------------
 -- grey.role_grants project-boundary trigger. The role_id FK alone only checks
@@ -642,6 +689,7 @@ drop policy if exists grey_roles_update_guard on public.roles;
 drop policy if exists grey_roles_insert_guard on public.roles;
 drop function if exists grey.can_administer_roles(uuid);
 drop function if exists grey.sync_project_team(uuid, uuid);
+drop function if exists grey.team_member_revoked(uuid, uuid);
 drop function if exists grey.rbac_ensure_membership(uuid, uuid);
 drop function if exists grey.rbac_role_for_member(uuid, uuid);
 drop table if exists grey.member_activity cascade;
