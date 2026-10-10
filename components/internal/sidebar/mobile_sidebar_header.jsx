@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { SidebarHeader, useSidebar } from "@geiger/ui/sidebar";
 import { BASE_PATH } from "@/lib/base_path";
+import { cn } from "@/lib/utils";
 
 function LogoMark({ className }) {
   const [failed, setFailed] = useState(false);
@@ -14,7 +15,7 @@ function LogoMark({ className }) {
     <img
       src={`${BASE_PATH}/logo1.svg`}
       alt=""
-      className={className}
+      className={cn("geiger-logo", className)}
       onError={() => setFailed(true)}
     />
   );

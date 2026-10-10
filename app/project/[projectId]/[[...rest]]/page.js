@@ -3,7 +3,7 @@
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ComingSoonScreen } from "@/components/internal/screens/coming_soon";
-import { getScreen } from "@/components/internal/screens/registry";
+import { getScreen, firstSubItemOf } from "@/components/internal/screens/registry";
 import { workspaceNav } from "@/components/internal/sidebar/sidebar_nav";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { useProject, pickDefaultProjectId } from "@/context/project-context";
@@ -36,11 +36,14 @@ function ScreenArea({ activeItem, Screen }) {
 
 export default function ProjectWorkspacePage() {
   const { tab: currentTab } = useWorkspaceUrl();
+  // A section-level tab (e.g. "Knowledge Bases") highlights/announces as its
+  // first sub-item ("All Knowledge Bases"), same as the sidebar.
+  const resolvedTab = firstSubItemOf(currentTab) ?? currentTab;
 
   const findActiveItem = () => {
     for (const item of workspaceNav) {
-      if (item.title === currentTab) return item;
-      const sub = item.subItems?.find((s) => s.title === currentTab);
+      if (item.title === resolvedTab) return item;
+      const sub = item.subItems?.find((s) => s.title === resolvedTab);
       if (sub) return sub;
     }
     return workspaceNav[0] || { title: "Overview" };

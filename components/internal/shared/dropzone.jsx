@@ -1,18 +1,42 @@
 "use client";
 
-import React, { useId, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// `accept` is a comma list of extensions (".pdf"), explicit MIME types
+// ("application/pdf") or MIME wildcards ("audio/*") — same grammar as the
+// native <input accept>, applied ourselves to dropped (non-input) files.
+function matchesAccept(file, accept) {
+  if (!accept) return true;
+  const patterns = accept
+    .split(",")
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean);
+  if (!patterns.length) return true;
+
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+
+  return patterns.some((pattern) => {
+    if (pattern.startsWith(".")) return name.endsWith(pattern);
+    if (pattern.endsWith("/*")) return type.startsWith(pattern.slice(0, -1));
+    return type === pattern;
+  });
+}
+
 // Dashed drop target + hidden file input. Used by the sources upload flow.
 export function Dropzone({ onFiles, accept, disabled, hint, className }) {
-  const inputId = useId();
   const inputRef = useRef(null);
+  // Nested children fire dragenter/dragleave as the pointer crosses their
+  // edges; a depth counter (rather than toggling on every event) keeps the
+  // dashed border from flickering while dragging over the hint text/icon.
+  const dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
 
   const emit = (fileList) => {
-    const files = Array.from(fileList ?? []);
+    const files = Array.from(fileList ?? []).filter((f) => matchesAccept(f, accept));
     if (files.length) onFiles?.(files);
   };
 
@@ -28,14 +52,25 @@ export function Dropzone({ onFiles, accept, disabled, hint, className }) {
           inputRef.current?.click();
         }
       }}
-      onDragOver={(e) => {
-        if (disabled) return;
+      onDragEnter={(e) => {
         e.preventDefault();
-        setDragging(true);
+        dragDepth.current += 1;
+        if (!disabled) setDragging(true);
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragOver={(e) => {
+        // Always prevent default so the browser doesn't open the file —
+        // even disabled, with an explicit "no drop" cursor.
+        e.preventDefault();
+        if (disabled && e.dataTransfer) e.dataTransfer.dropEffect = "none";
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
+        dragDepth.current = 0;
         setDragging(false);
         if (disabled) return;
         emit(e.dataTransfer?.files);
@@ -56,7 +91,6 @@ export function Dropzone({ onFiles, accept, disabled, hint, className }) {
       </p>
       {hint ? <p className="text-xs text-text-secondary">{hint}</p> : null}
       <input
-        id={inputId}
         ref={inputRef}
         type="file"
         multiple

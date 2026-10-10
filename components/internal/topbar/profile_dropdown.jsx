@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -130,24 +129,26 @@ export function ProfileDropdown({ children }) {
         <div className="p-1.5">
           <DropdownMenuGroup>
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle}`}>
-              <Link href={profileHref}>
+              {/* geiger-dash owns these routes at the origin root — plain <a>, never next/link. */}
+              <a href={profileHref}>
                 <CircleUserRound className="size-4 text-muted-foreground" />
                 <span>Profile</span>
-              </Link>
+              </a>
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle}`}>
-              <Link href={`${orgBase}/`}>
+              <a href={`${orgBase}/`}>
                 <UsersRound className="size-4 text-muted-foreground" />
                 <span>Organization Settings</span>
-              </Link>
+              </a>
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle}`}>
-              <Link href="/billing">
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              <a href="/billing">
                 <Wallet className="size-4 text-muted-foreground" />
                 <span>Billing &amp; Plans</span>
-              </Link>
+              </a>
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
@@ -155,17 +156,17 @@ export function ProfileDropdown({ children }) {
 
           <DropdownMenuGroup>
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle}`}>
-              <Link href={`${orgBase}/settings`}>
+              <a href={`${orgBase}/settings`}>
                 <Settings className="size-4 text-muted-foreground" />
                 <span>Settings</span>
-              </Link>
+              </a>
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle}`}>
-              <Link href={`${orgBase}/security`}>
+              <a href={`${orgBase}/security`}>
                 <ShieldCheck className="size-4 text-muted-foreground" />
                 <span>Security</span>
-              </Link>
+              </a>
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
@@ -187,18 +188,19 @@ export function ProfileDropdown({ children }) {
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className={`${itemBaseStyle} ${itemHoverStyle} mb-1`}>
-              <Link href="/docs">
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              <a href="/docs">
                 <BookMarked className="size-4 text-muted-foreground" />
                 <span>Documentation</span>
                 <ExternalLink className="size-3 ml-auto text-text-secondary" />
-              </Link>
+              </a>
             </DropdownMenuItem>
 
             <DropdownMenuItem
               onSelect={handleSignOut}
-              className={`${itemBaseStyle} text-muted-foreground hover:bg-red-500/10 focus:bg-red-500/10 hover:text-red-400 focus:text-red-400 group`}
+              className={`${itemBaseStyle} text-muted-foreground hover:bg-destructive-text/10 focus:bg-destructive-text/10 hover:text-destructive-text focus:text-destructive-text group`}
             >
-              <LogOut className="size-4 group-hover:text-red-400 group-focus:text-red-400" />
+              <LogOut className="size-4 group-hover:text-destructive-text group-focus:text-destructive-text" />
               <span>Sign out</span>
             </DropdownMenuItem>
           </DropdownMenuGroup>

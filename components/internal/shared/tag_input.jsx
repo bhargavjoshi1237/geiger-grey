@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@geiger/ui/badge";
 import { Input } from "@geiger/ui/input";
@@ -12,14 +13,20 @@ import { cn } from "@/lib/utils";
 export function TagInput({ value = [], onChange, placeholder, validate, className }) {
   const [draft, setDraft] = useState("");
 
+  const hasTag = (tag) =>
+    value.some((t) => t.toLowerCase() === tag.toLowerCase());
+
   const addTag = (raw) => {
     const tag = raw.trim();
     if (!tag) return;
-    if (value.includes(tag)) {
+    if (hasTag(tag)) {
       setDraft("");
       return;
     }
-    if (validate && !validate(tag)) return;
+    if (validate && !validate(tag)) {
+      toast.error(`"${tag}" isn't valid.`);
+      return;
+    }
     onChange?.([...value, tag]);
     setDraft("");
   };
@@ -29,12 +36,27 @@ export function TagInput({ value = [], onChange, placeholder, validate, classNam
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" || e.key === ",") {
+    // IME composition (e.g. picking a candidate in a CJK input) also fires
+    // "Enter" — don't treat that as a tag commit.
+    if (e.key === "Enter" && !e.nativeEvent?.isComposing) {
+      e.preventDefault();
+      addTag(draft);
+    } else if (e.key === ",") {
       e.preventDefault();
       addTag(draft);
     } else if (e.key === "Backspace" && !draft && value.length) {
       removeTag(value[value.length - 1]);
     }
+  };
+
+  // A pasted comma-separated list ("a.com, b.com, c.com") commits every
+  // complete entry at once instead of landing as one unparsed draft string.
+  const handlePaste = (e) => {
+    const text = e.clipboardData?.getData("text") ?? "";
+    if (!text.includes(",")) return;
+    e.preventDefault();
+    const parts = text.split(",");
+    for (const part of parts) addTag(part);
   };
 
   return (
@@ -61,6 +83,7 @@ export function TagInput({ value = [], onChange, placeholder, validate, classNam
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         onBlur={() => addTag(draft)}
         placeholder={value.length ? "" : placeholder}
         className="h-7 min-w-[8rem] flex-1 border-none bg-transparent px-1 shadow-none focus-visible:ring-0"

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,13 +11,25 @@ import { cn } from "@/lib/utils";
 // endpoint URLs, embed snippets and other copy-to-clipboard values.
 export function CopyBlock({ value, label, multiline = false, className }) {
   const [copied, setCopied] = useState(false);
+  const resetTimer = useRef(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    },
+    [],
+  );
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value ?? "");
       setCopied(true);
       toast.success("Copied");
-      setTimeout(() => setCopied(false), 1500);
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => {
+        resetTimer.current = null;
+        setCopied(false);
+      }, 1500);
     } catch (error) {
       console.error("[copy_block.copy]", error);
       toast.error("Couldn't copy");

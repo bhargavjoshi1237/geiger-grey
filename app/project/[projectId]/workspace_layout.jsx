@@ -4,6 +4,7 @@ import React, { Suspense } from "react";
 import { AppSidebar } from "@/components/internal/sidebar/sidebar";
 import { Topbar } from "@/components/internal/topbar/topbar";
 import { SidebarProvider, SidebarInset } from "@geiger/ui/sidebar";
+import { LoadingScreen } from "@geiger/ui";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { ProjectProvider } from "@/context/project-context";
 import { NavVisibilityProvider } from "@/context/nav-visibility-context";
@@ -35,11 +36,7 @@ function WorkspaceShell({ children }) {
 
 export default function ProjectWorkspaceLayout({ children }) {
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-[100dvh] w-full items-center justify-center bg-background" />
-      }
-    >
+    <Suspense fallback={<LoadingScreen className="h-[100dvh] bg-background" />}>
       <ProjectProvider>
         <RbacProvider>
           <NavVisibilityProvider>

@@ -170,7 +170,7 @@ export function StatTile({
     trend === "up"
       ? "text-emerald-400"
       : trend === "down"
-        ? "text-red-400"
+        ? "text-destructive-text"
         : "text-text-secondary";
 
   return (
@@ -185,7 +185,7 @@ export function StatTile({
         <div className="mt-2 flex flex-col items-start gap-1 sm:flex-row sm:items-end sm:gap-2">
           <RollingNumber
             value={value}
-            className="text-2xl font-bold leading-none text-white tabular-nums"
+            className="text-2xl font-bold leading-none text-foreground tabular-nums"
             compactOnMobile={compactOnMobile}
             compactThreshold={compactThreshold}
             compactValue={compactValue}
@@ -248,7 +248,7 @@ export function StatsBar({
                 <div className="mt-1 flex flex-col items-start gap-1 sm:flex-row sm:items-end sm:gap-2">
                   <RollingNumber
                     value={stat.value}
-                    className="text-2xl font-bold leading-none text-white"
+                    className="text-2xl font-bold leading-none text-foreground"
                     compactOnMobile={stat.compactOnMobile ?? compactOnMobile}
                     compactThreshold={stat.compactThreshold ?? compactThreshold}
                     compactValue={stat.compactValue}
@@ -257,7 +257,7 @@ export function StatsBar({
                     <span
                       className={cn(
                         "inline-flex items-center gap-0.5 text-xs font-medium sm:mb-0.5",
-                        up ? "text-emerald-400" : "text-red-400",
+                        up ? "text-emerald-400" : "text-destructive-text",
                       )}
                     >
                       <TrendIcon className="h-3 w-3" />

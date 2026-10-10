@@ -20,6 +20,7 @@ import { Skeleton } from "@geiger/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useNavLoading, useVisibleNav } from "@/lib/hooks/use-visible-nav";
 import { useIdleRecenter } from "@/lib/hooks/use-idle-recenter";
+import { firstSubItemOf } from "@/components/internal/screens/registry";
 
 const SIDEBAR_SCROLL_ID = "workspace-sidebar-scroll";
 let savedSidebarScroll = 0;
@@ -50,7 +51,10 @@ function SidebarNavSkeleton() {
 export function AppSidebar({ activeTab = "Overview", onTabChange = () => {} }) {
   const { toggleSidebar, state } = useSidebar();
   const [expandedItems, setExpandedItems] = React.useState({});
-  const { ref: navRef } = useIdleRecenter(activeTab);
+  // A section-level tab (e.g. "Knowledge Bases") highlights/expands as its
+  // first sub-item ("All Knowledge Bases").
+  const resolvedTab = firstSubItemOf(activeTab) ?? activeTab;
+  const { ref: navRef } = useIdleRecenter(resolvedTab);
 
   React.useLayoutEffect(() => {
     const el = document.getElementById(SIDEBAR_SCROLL_ID);
@@ -91,16 +95,16 @@ export function AppSidebar({ activeTab = "Overview", onTabChange = () => {} }) {
                   key={item.title}
                   title={item.title}
                   icon={item.icon}
-                  isActive={activeTab === item.title}
+                  isActive={resolvedTab === item.title}
                   badge={item.badge}
                   subItems={item.subItems || null}
                   isExpanded={
                     expandedItems[item.title] !== undefined
                       ? expandedItems[item.title]
-                      : !!item.subItems?.some((sub) => sub.title === activeTab)
+                      : !!item.subItems?.some((sub) => sub.title === resolvedTab)
                   }
                   onToggle={() => toggleExpand(item.title)}
-                  activeSubTab={activeTab}
+                  activeSubTab={resolvedTab}
                   onClick={(subTitle) =>
                     onTabChange(
                       typeof subTitle === "string" ? subTitle : item.title,
