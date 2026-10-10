@@ -28,6 +28,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { getUser } from "@/lib/supabase/user";
+import { clearShellCacheUser } from "@/lib/workspace/shell_cache";
 import { createClient } from "@/lib/supabase/client";
 import { useOptionalProject } from "@/context/project-context";
 import { Button } from "@geiger/ui/button";
@@ -68,6 +69,7 @@ export function ProfileDropdown({ children }) {
   const profileHref = user?.id ? `/profile/${user.id}` : "/profile";
 
   const handleSignOut = async () => {
+    clearShellCacheUser();
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
