@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { ChevronDown, Maximize2, Minus, Plus, RotateCcw, Settings2 } from "lucide-react";
+import { LoadingArea } from "@geiger/ui";
 
 const ForceGraph2D = dynamic(
   () => import("react-force-graph-2d").then((mod) => mod.default),
@@ -19,17 +20,46 @@ const ForceGraph3D = dynamic(
 );
 
 const DEFAULT_FORCES = { center: 0.04, repel: 260, link: 0.22, distance: 118 };
-const FALLBACK_TOKENS = {
-  background: "#161616",
-  foreground: "#e7e7e7",
-  border: "#333333",
-  muted: "#a3a3a3",
-};
+// Rendering every node in a large graph tanks both renderers; keep the most-connected ones.
+const NODE_CAP = 500;
 
-// Blends a resolved token colour with transparency via CSS color-mix() instead of hand-rolled
-// rgba() math, which would otherwise assume the token is a hex/rgb value.
-function mix(color, percent) {
-  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+let toRgbCanvas = null;
+const toRgbCache = new Map();
+
+// Resolves ANY CSS colour string (oklch(), color-mix(), hex, a named colour, …) to a plain
+// "rgb()"/"rgba()" string by painting it onto a 1x1 canvas and reading the pixel back.
+// three.js's Color constructor (used by the 3D renderer) only understands hex/named colours —
+// not oklch()/color-mix() — so every token must be funneled through this before reaching either
+// renderer. Results are memoized per input string since the same CSS value always resolves the
+// same way.
+function toRgb(cssColor) {
+  if (!cssColor) return null;
+  if (typeof document === "undefined") return cssColor;
+  const cached = toRgbCache.get(cssColor);
+  if (cached) return cached;
+
+  if (!toRgbCanvas) toRgbCanvas = document.createElement("canvas");
+  toRgbCanvas.width = 1;
+  toRgbCanvas.height = 1;
+  const ctx = toRgbCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.fillStyle = cssColor;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+  const value = a < 255 ? `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})` : `rgb(${r}, ${g}, ${b})`;
+  toRgbCache.set(cssColor, value);
+  return value;
+}
+
+// Every token is already a resolved rgb()/rgba() string (via toRgb above), so blending to a given
+// opacity is a plain channel read — never a second colour-parsing step, and never a hand-rolled
+// hex/rgba() literal.
+function withAlpha(rgbToken, percent) {
+  if (!rgbToken) return rgbToken;
+  const match = rgbToken.match(/rgba?\(([^)]+)\)/);
+  if (!match) return rgbToken;
+  const [r, g, b] = match[1].split(",").map((part) => parseFloat(part));
+  return `rgba(${r}, ${g}, ${b}, ${(percent / 100).toFixed(3)})`;
 }
 
 function getNodeId(nodeOrId) {
@@ -37,10 +67,14 @@ function getNodeId(nodeOrId) {
 }
 
 // Resolves the semantic CSS tokens (background/foreground/border/muted + per-type chart colour)
-// at runtime via getComputedStyle, re-reading whenever the type list or the resolved theme changes.
+// at runtime via getComputedStyle, re-reading whenever the type list or the resolved theme
+// changes. `tokens` starts null (nothing to resolve against on the server) — the caller renders
+// a loading state until the first client-side resolution lands. An empty custom property falls
+// back to another token (never a hardcoded hex literal); as a last resort the CSS system colours
+// Canvas/CanvasText stand in for a totally broken theme.
 function useGraphTokens(types) {
   const { resolvedTheme } = useTheme();
-  const [tokens, setTokens] = useState(FALLBACK_TOKENS);
+  const [tokens, setTokens] = useState(null);
   const [typeColors, setTypeColors] = useState({});
 
   useEffect(() => {
@@ -48,23 +82,24 @@ function useGraphTokens(types) {
     let cancelled = false;
 
     // Deferred a frame so the resolved values land in a microtask rather than synchronously
-    // inside the effect body — the tokens still only ever reflect the latest types/theme.
+    // inside the effect body.
     const frame = requestAnimationFrame(() => {
       if (cancelled) return;
       const style = getComputedStyle(document.documentElement);
-      const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+      const raw = (name) => style.getPropertyValue(name).trim();
 
-      setTokens({
-        background: read("--background", FALLBACK_TOKENS.background),
-        foreground: read("--foreground", FALLBACK_TOKENS.foreground),
-        border: read("--border", FALLBACK_TOKENS.border),
-        muted: read("--muted-foreground", FALLBACK_TOKENS.muted),
-      });
+      const foreground = (raw("--foreground") && toRgb(raw("--foreground"))) || toRgb("CanvasText");
+      const background = (raw("--background") && toRgb(raw("--background"))) || toRgb("Canvas");
+      const border = (raw("--border") && toRgb(raw("--border"))) || foreground;
+      const muted = (raw("--muted-foreground") && toRgb(raw("--muted-foreground"))) || foreground;
+
+      setTokens({ background, foreground, border, muted });
 
       const nextTypeColors = {};
       for (const type of types || []) {
         const varName = `--${type.color || "chart-1"}`;
-        nextTypeColors[type.id] = read(varName, FALLBACK_TOKENS.muted);
+        const value = raw(varName);
+        nextTypeColors[type.id] = value ? toRgb(value) : muted;
       }
       setTypeColors(nextTypeColors);
     });
@@ -110,7 +145,17 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
   const typesById = useMemo(() => new Map((types || []).map((t) => [t.id, t])), [types]);
 
   const graph = useMemo(() => {
-    const nodes = entities.map((entity) => ({
+    // Rank by degree over the FULL set before capping, so truncation keeps the most-connected
+    // (most informative) nodes rather than an arbitrary slice.
+    const degree = new Map();
+    for (const rel of relations) {
+      degree.set(rel.sourceEntityId, (degree.get(rel.sourceEntityId) || 0) + 1);
+      degree.set(rel.targetEntityId, (degree.get(rel.targetEntityId) || 0) + 1);
+    }
+    const ranked = [...entities].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0));
+    const capped = ranked.length > NODE_CAP ? ranked.slice(0, NODE_CAP) : ranked;
+
+    const nodes = capped.map((entity) => ({
       id: entity.id,
       label: entity.name,
       typeId: entity.typeId,
@@ -125,7 +170,7 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
         target: rel.targetEntityId,
         typeId: rel.typeId,
       }));
-    return { nodes, links };
+    return { nodes, links, total: ranked.length, truncated: ranked.length > NODE_CAP };
   }, [entities, relations, typesById]);
 
   const hasGraphSize = width > 40 && measuredHeight > 40;
@@ -257,7 +302,7 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
 
       ctx.beginPath();
       ctx.arc(node.x, node.y, radius + (isSelected ? 8 : isHovered ? 5 : 2), 0, Math.PI * 2);
-      ctx.fillStyle = isSelected ? mix(tokens.foreground, 12) : mix(tokens.foreground, 7);
+      ctx.fillStyle = isSelected ? withAlpha(tokens.foreground, 12) : withAlpha(tokens.foreground, 7);
       ctx.fill();
 
       ctx.beginPath();
@@ -278,8 +323,8 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
         const padX = 5 / globalScale;
         const padY = 3 / globalScale;
 
-        ctx.fillStyle = active && !isActive ? mix(tokens.background, 35) : mix(tokens.background, 76);
-        ctx.strokeStyle = active && !isActive ? mix(tokens.border, 20) : mix(tokens.border, 74);
+        ctx.fillStyle = active && !isActive ? withAlpha(tokens.background, 35) : withAlpha(tokens.background, 76);
+        ctx.strokeStyle = active && !isActive ? withAlpha(tokens.border, 20) : withAlpha(tokens.border, 74);
         ctx.lineWidth = 1 / globalScale;
         ctx.beginPath();
         ctx.roundRect(
@@ -292,7 +337,7 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = active && !isActive ? mix(tokens.muted, 42) : tokens.foreground;
+        ctx.fillStyle = active && !isActive ? withAlpha(tokens.muted, 42) : tokens.foreground;
         ctx.fillText(label, node.x, textY);
       }
 
@@ -300,6 +345,14 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
     },
     [degreeById, hovered, isNodeActive, selectedId, tokens, typeColors],
   );
+
+  if (!tokens) {
+    return (
+      <div className="relative flex w-full items-center justify-center bg-background" style={{ height: height || "100%" }}>
+        <LoadingArea label="Loading graph" />
+      </div>
+    );
+  }
 
   return (
     <main
@@ -310,11 +363,17 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-10 opacity-70"
         style={{
-          backgroundImage: `linear-gradient(${mix(tokens.foreground, 3.5)} 1px, transparent 1px), linear-gradient(90deg, ${mix(tokens.foreground, 3.5)} 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(${withAlpha(tokens.foreground, 3.5)} 1px, transparent 1px), linear-gradient(90deg, ${withAlpha(tokens.foreground, 3.5)} 1px, transparent 1px)`,
           backgroundSize: "80px 80px",
           backgroundPosition: "center center",
         }}
       />
+
+      {graph.truncated ? (
+        <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-border bg-surface-subtle/95 px-3 py-1 text-xs text-muted-foreground shadow-xl backdrop-blur">
+          Showing {NODE_CAP} of {graph.total} entities
+        </div>
+      ) : null}
 
       <button
         type="button"
@@ -455,10 +514,12 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
             }}
             linkColor={(link) => {
               const active = hovered || selectedId;
-              if (!active) return mix(tokens.muted, 16);
+              if (!active) return withAlpha(tokens.muted, 16);
               const source = getNodeId(link.source);
               const target = getNodeId(link.target);
-              return source === active || target === active ? mix(tokens.foreground, 54) : mix(tokens.muted, 6);
+              return source === active || target === active
+                ? withAlpha(tokens.foreground, 54)
+                : withAlpha(tokens.muted, 6);
             }}
             linkWidth={(link) => {
               const active = hovered || selectedId;
@@ -507,10 +568,12 @@ export function KnowledgeGraph({ entities = [], relations = [], types = [], onSe
             nodeResolution={24}
             linkColor={(link) => {
               const active = hovered || selectedId;
-              if (!active) return mix(tokens.muted, 22);
+              if (!active) return withAlpha(tokens.muted, 22);
               const source = getNodeId(link.source);
               const target = getNodeId(link.target);
-              return source === active || target === active ? mix(tokens.foreground, 72) : mix(tokens.muted, 8);
+              return source === active || target === active
+                ? withAlpha(tokens.foreground, 72)
+                : withAlpha(tokens.muted, 8);
             }}
             linkWidth={(link) => {
               const active = hovered || selectedId;

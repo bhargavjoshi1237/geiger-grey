@@ -20,6 +20,7 @@ import { mergeEntities } from "@/lib/supabase/graph";
 export function MergeDialog({ open, onOpenChange, group = [], projectId, onMerged }) {
   const seedKey = `${open}-${group.map((e) => e.id).join(",")}`;
   const [canonicalId, setCanonicalId] = useState(() => group[0]?.id || null);
+  const [saving, setSaving] = useState(false);
   const [seed, setSeed] = useState(seedKey);
   if (seed !== seedKey) {
     setSeed(seedKey);
@@ -35,18 +36,21 @@ export function MergeDialog({ open, onOpenChange, group = [], projectId, onMerge
   const confirm = async () => {
     if (!canonical || others.length === 0) return;
     setSaving(true);
-    const ok = await mergeEntities(projectId, {
-      canonicalId: canonical.id,
-      duplicateIds: others.map((e) => e.id),
-    });
-    setSaving(false);
-    if (!ok) {
-      toast.error("Couldn't merge these entities.");
-      return;
+    try {
+      const ok = await mergeEntities(projectId, {
+        canonicalId: canonical.id,
+        duplicateIds: others.map((e) => e.id),
+      });
+      if (!ok) {
+        toast.error("Couldn't merge these entities.");
+        return;
+      }
+      toast.success(`Merged into ${canonical.name}.`);
+      onOpenChange(false);
+      onMerged?.();
+    } finally {
+      setSaving(false);
     }
-    toast.success(`Merged into ${canonical.name}.`);
-    onOpenChange(false);
-    onMerged?.();
   };
 
   return (

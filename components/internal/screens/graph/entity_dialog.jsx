@@ -39,6 +39,7 @@ function buildDraft(entity, types) {
 export function EntityDialog({ open, onOpenChange, entity, types = [], projectId, onSaved }) {
   const seedKey = `${open}-${entity?.id || "new"}`;
   const [draft, setDraft] = useState(() => buildDraft(entity, types));
+  const [saving, setSaving] = useState(false);
   const [seed, setSeed] = useState(seedKey);
   // Resetting state while a prop changes, during render — React's documented alternative to an
   // effect for "derive state from props" (avoids the extra render an effect would cost here).
@@ -59,7 +60,6 @@ export function EntityDialog({ open, onOpenChange, entity, types = [], projectId
       toast.error("Choose an entity type.");
       return;
     }
-    setSaving(true);
     const isEdit = Boolean(entity?.id);
     const payload = {
       name,
@@ -67,17 +67,21 @@ export function EntityDialog({ open, onOpenChange, entity, types = [], projectId
       aliases: draft.aliases,
       description: draft.description.trim() || null,
     };
-    const saved = isEdit
-      ? await updateEntity(entity.id, payload)
-      : await createEntity(projectId, { ...payload, sourceApp: "manual", confidence: 1 });
-    setSaving(false);
-    if (!saved) {
-      toast.error(isEdit ? "Couldn't save the entity." : "Couldn't create the entity.");
-      return;
+    setSaving(true);
+    try {
+      const saved = isEdit
+        ? await updateEntity(entity.id, payload)
+        : await createEntity(projectId, { ...payload, sourceApp: "manual", confidence: 1 });
+      if (!saved) {
+        toast.error(isEdit ? "Couldn't save the entity." : "Couldn't create the entity.");
+        return;
+      }
+      toast.success(isEdit ? "Entity updated." : "Entity created.");
+      onOpenChange(false);
+      onSaved?.(saved);
+    } finally {
+      setSaving(false);
     }
-    toast.success(isEdit ? "Entity updated." : "Entity created.");
-    onOpenChange(false);
-    onSaved?.(saved);
   };
 
   return (

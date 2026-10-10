@@ -22,6 +22,7 @@ function buildDraft(type) {
 export function TypeDialog({ open, onOpenChange, kind, type, projectId, onSaved }) {
   const seedKey = `${open}-${type?.id || "new"}`;
   const [draft, setDraft] = useState(() => buildDraft(type));
+  const [saving, setSaving] = useState(false);
   const [seed, setSeed] = useState(seedKey);
   if (seed !== seedKey) {
     setSeed(seedKey);
@@ -36,20 +37,23 @@ export function TypeDialog({ open, onOpenChange, kind, type, projectId, onSaved 
       toast.error("Give the type a name.");
       return;
     }
-    setSaving(true);
     const isEdit = Boolean(type?.id);
     const payload = { name, color: draft.color, description: draft.description.trim() || null };
-    const saved = isEdit
-      ? await updateType(type.id, payload)
-      : await createType(projectId, { ...payload, kind });
-    setSaving(false);
-    if (!saved) {
-      toast.error(isEdit ? "Couldn't save the type." : "Couldn't create the type.");
-      return;
+    setSaving(true);
+    try {
+      const saved = isEdit
+        ? await updateType(type.id, payload)
+        : await createType(projectId, { ...payload, kind });
+      if (!saved) {
+        toast.error(isEdit ? "Couldn't save the type." : "Couldn't create the type.");
+        return;
+      }
+      toast.success(isEdit ? "Type updated." : "Type created.");
+      onOpenChange(false);
+      onSaved?.(saved);
+    } finally {
+      setSaving(false);
     }
-    toast.success(isEdit ? "Type updated." : "Type created.");
-    onOpenChange(false);
-    onSaved?.(saved);
   };
 
   return (

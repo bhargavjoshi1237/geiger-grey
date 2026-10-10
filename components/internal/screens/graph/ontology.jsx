@@ -4,18 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@geiger/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  LoadingArea,
-} from "@geiger/ui";
+import { Tooltip, TooltipContent, TooltipTrigger, LoadingArea } from "@geiger/ui";
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
@@ -27,6 +16,7 @@ import {
   deleteType,
 } from "@/lib/supabase/graph";
 import { TypeDialog } from "./type_dialog";
+import { ConfirmDialog } from "./confirm_dialog";
 
 function TypeRow({ type, usageCount, canManage, onEdit, onDelete }) {
   const blocked = usageCount > 0;
@@ -67,7 +57,7 @@ function TypeRow({ type, usageCount, canManage, onEdit, onDelete }) {
                 variant="ghost"
                 size="icon-sm"
                 aria-label={`Delete ${type.name}`}
-                className="text-muted-foreground hover:bg-red-500/10 hover:text-red-300"
+                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive-text"
                 onClick={() => onDelete(type)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -121,14 +111,17 @@ export function OntologyScreen() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const ok = await deleteType(deleteTarget.id);
+    const target = deleteTarget;
     setDeleteTarget(null);
+    // Optimistic: drop it from the list immediately, roll back on failure — no refetch either way.
+    setTypes((prev) => prev.filter((t) => t.id !== target.id));
+    const ok = await deleteType(target.id);
     if (!ok) {
+      setTypes((prev) => [...prev, target]);
       toast.error("Couldn't delete the type.");
       return;
     }
-    toast.success(`Deleted ${deleteTarget.name}.`);
-    load();
+    toast.success(`Deleted ${target.name}.`);
   };
 
   if (loading) {
@@ -221,22 +214,13 @@ export function OntologyScreen() {
         onSaved={load}
       />
 
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete {deleteTarget?.name}?</DialogTitle>
-            <DialogDescription>This type is unused and can be safely removed. This can&apos;t be undone.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button className="bg-red-500/90 text-white hover:bg-red-500" onClick={confirmDelete}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title={`Delete ${deleteTarget?.name}?`}
+        description="This type is unused and can be safely removed. This can't be undone."
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </MainScreenWrapper>
   );
 }

@@ -32,6 +32,7 @@ export function GraphExplorerScreen() {
   const [entities, setEntities] = useState([]);
   const [relations, setRelations] = useState([]);
   const [knowledgeBases, setKnowledgeBases] = useState([]);
+  const [sources, setSources] = useState([]);
   const [entityKbIds, setEntityKbIds] = useState(new Map());
 
   const [activeTypeIds, setActiveTypeIds] = useState(new Set());
@@ -55,6 +56,7 @@ export function GraphExplorerScreen() {
       setEntities(entityRows ?? []);
       setRelations(relationRows ?? []);
       setKnowledgeBases(kbRows ?? []);
+      setSources(sourceRows ?? []);
 
       const sourceById = new Map((sourceRows ?? []).map((s) => [s.id, s]));
       const nextEntityKbIds = new Map();
@@ -248,6 +250,10 @@ export function GraphExplorerScreen() {
         onOpenChange={(next) => !next && selectEntity(null)}
         entity={selectedEntity}
         projectId={projectId}
+        types={types}
+        entities={entities}
+        relations={relations}
+        sources={sources}
         onChanged={load}
       />
 

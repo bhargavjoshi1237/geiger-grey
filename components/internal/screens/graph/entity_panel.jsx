@@ -2,6 +2,11 @@
 
 // Sheet opened from a graph node (or the Entities table): entity details, relations
 // (add/remove), mentions with a jump to their source, and quick actions.
+//
+// types/entities/relations/sources can be passed down from a parent screen that already has
+// them loaded (Graph Explorer, Entities) to avoid a redundant fetch; any left out are fetched
+// here instead. Mentions are always fetched — they're specific to the open entity and no parent
+// keeps a project-wide copy.
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ExternalLink, MessageSquare, Pencil, Plus, Trash2 } from "lucide-react";
@@ -27,52 +32,71 @@ import { listSources } from "@/lib/supabase/sources";
 import { SOURCE_APP_MAP, confidenceLabel } from "./constants";
 import { EntityDialog } from "./entity_dialog";
 
-export function EntityPanel({ open, onOpenChange, entity, projectId, onChanged }) {
+export function EntityPanel({
+  open,
+  onOpenChange,
+  entity,
+  projectId,
+  onChanged,
+  types: typesProp,
+  entities: entitiesProp,
+  relations: relationsProp,
+  sources: sourcesProp,
+}) {
   const url = useWorkspaceUrl();
   const canEdit = useCan("grey.graph.edit");
   const [loading, setLoading] = useState(true);
-  const [types, setTypes] = useState([]);
-  const [entities, setEntities] = useState([]);
-  const [relations, setRelations] = useState([]);
+  const [typesState, setTypesState] = useState([]);
+  const [entitiesState, setEntitiesState] = useState([]);
+  // Relations are mutated here (add/remove), so they always live in local state — seeded from
+  // the prop when the caller has one, otherwise fetched below.
+  const [relations, setRelations] = useState(relationsProp || []);
   const [mentions, setMentions] = useState([]);
-  const [sources, setSources] = useState([]);
+  const [sourcesState, setSourcesState] = useState([]);
   const [editOpen, setEditOpen] = useState(false);
   const [newRelationTypeId, setNewRelationTypeId] = useState("");
   const [newTargetId, setNewTargetId] = useState("");
   const [savingRelation, setSavingRelation] = useState(false);
 
+  const types = typesProp || typesState;
+  const entities = entitiesProp || entitiesState;
+  const sources = sourcesProp || sourcesState;
+
   // Reset to a loading state during render (not inside the fetch effect below) whenever the
   // panel opens for a different entity, so the fetch effect itself never calls setState
-  // synchronously outside of its promise callback.
+  // synchronously outside of its promise callback. Re-seed relations from the freshest prop too.
   const loadKey = open && entity?.id ? entity.id : null;
   const [loadedFor, setLoadedFor] = useState(loadKey);
   if (loadedFor !== loadKey) {
     setLoadedFor(loadKey);
-    if (loadKey) setLoading(true);
+    if (loadKey) {
+      setLoading(true);
+      if (relationsProp) setRelations(relationsProp);
+    }
   }
 
   useEffect(() => {
-    if (!open || !entity?.id || !projectId) return;
+    if (!open || !entity?.id || !projectId) return undefined;
     let alive = true;
     Promise.all([
-      listTypes(projectId),
-      listEntities(projectId),
-      listRelations(projectId),
+      typesProp ? Promise.resolve(typesProp) : listTypes(projectId),
+      entitiesProp ? Promise.resolve(entitiesProp) : listEntities(projectId),
+      relationsProp ? Promise.resolve(relationsProp) : listRelations(projectId),
       listMentions(projectId, { entityId: entity.id }),
-      listSources(projectId),
+      sourcesProp ? Promise.resolve(sourcesProp) : listSources(projectId),
     ]).then(([typeRows, entityRows, relationRows, mentionRows, sourceRows]) => {
       if (!alive) return;
-      setTypes(typeRows ?? []);
-      setEntities(entityRows ?? []);
-      setRelations(relationRows ?? []);
+      if (!typesProp) setTypesState(typeRows ?? []);
+      if (!entitiesProp) setEntitiesState(entityRows ?? []);
+      if (!relationsProp) setRelations(relationRows ?? []);
       setMentions(mentionRows ?? []);
-      setSources(sourceRows ?? []);
+      if (!sourcesProp) setSourcesState(sourceRows ?? []);
       setLoading(false);
     });
     return () => {
       alive = false;
     };
-  }, [open, entity?.id, projectId]);
+  }, [open, entity?.id, projectId, typesProp, entitiesProp, relationsProp, sourcesProp]);
 
   const typeById = useMemo(() => new Map(types.map((t) => [t.id, t])), [types]);
   const entityById = useMemo(() => new Map(entities.map((e) => [e.id, e])), [entities]);
@@ -85,47 +109,46 @@ export function EntityPanel({ open, onOpenChange, entity, projectId, onChanged }
     [relations, entity?.id],
   );
 
-  const refresh = async () => {
-    if (!entity?.id || !projectId) return;
-    const [relationRows, mentionRows] = await Promise.all([
-      listRelations(projectId),
-      listMentions(projectId, { entityId: entity.id }),
-    ]);
-    setRelations(relationRows ?? []);
-    setMentions(mentionRows ?? []);
-    onChanged?.();
-  };
-
   const addRelation = async () => {
     if (!newRelationTypeId || !newTargetId) {
       toast.error("Choose a relation type and a target entity.");
       return;
     }
-    setSavingRelation(true);
-    const saved = await createRelation(projectId, {
-      sourceEntityId: entity.id,
-      targetEntityId: newTargetId,
-      typeId: newRelationTypeId,
-    });
-    setSavingRelation(false);
-    if (!saved) {
-      toast.error("Couldn't add the relation.");
-      return;
-    }
+    const tempId = `temp-${crypto.randomUUID()}`;
+    const typeId = newRelationTypeId;
+    const targetEntityId = newTargetId;
+    // Optimistic: show the relation immediately, swap in the real row (or roll back) once the
+    // request settles — no refetch either way.
+    setRelations((prev) => [...prev, { id: tempId, sourceEntityId: entity.id, targetEntityId, typeId }]);
     setNewRelationTypeId("");
     setNewTargetId("");
-    toast.success("Relation added.");
-    refresh();
+    setSavingRelation(true);
+    try {
+      const saved = await createRelation(projectId, { sourceEntityId: entity.id, targetEntityId, typeId });
+      if (!saved) {
+        setRelations((prev) => prev.filter((r) => r.id !== tempId));
+        toast.error("Couldn't add the relation.");
+        return;
+      }
+      setRelations((prev) => prev.map((r) => (r.id === tempId ? saved : r)));
+      toast.success("Relation added.");
+      onChanged?.();
+    } finally {
+      setSavingRelation(false);
+    }
   };
 
   const removeRelation = async (relation) => {
+    // Optimistic: drop it immediately, restore it on failure — no refetch either way.
+    setRelations((prev) => prev.filter((r) => r.id !== relation.id));
     const ok = await deleteRelation(relation.id);
     if (!ok) {
+      setRelations((prev) => [...prev, relation]);
       toast.error("Couldn't remove the relation.");
       return;
     }
     toast.success("Relation removed.");
-    refresh();
+    onChanged?.();
   };
 
   const askAboutThis = () => {
@@ -220,7 +243,7 @@ export function EntityPanel({ open, onOpenChange, entity, projectId, onChanged }
                               variant="ghost"
                               size="icon-sm"
                               aria-label="Remove relation"
-                              className="shrink-0 text-muted-foreground hover:bg-red-500/10 hover:text-red-300"
+                              className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive-text"
                               onClick={() => removeRelation(relation)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />

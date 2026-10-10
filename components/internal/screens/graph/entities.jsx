@@ -5,16 +5,7 @@ import { toast } from "sonner";
 import { Merge, Plus, Share2, Trash2, Pencil } from "lucide-react";
 import { Button } from "@geiger/ui/button";
 import { Badge } from "@geiger/ui/badge";
-import {
-  ActionMenu,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  LoadingArea,
-} from "@geiger/ui";
+import { ActionMenu, LoadingArea } from "@geiger/ui";
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
@@ -35,6 +26,7 @@ import { ensureDefaultOntology, listEntities, listRelations, listMentions, delet
 import { EntityPanel } from "./entity_panel";
 import { EntityDialog } from "./entity_dialog";
 import { MergeDialog } from "./merge_dialog";
+import { ConfirmDialog } from "./confirm_dialog";
 import { SOURCE_APP_MAP, confidenceLabel } from "./constants";
 
 export function EntitiesScreen() {
@@ -120,14 +112,17 @@ export function EntitiesScreen() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const ok = await deleteEntity(deleteTarget.id);
+    const target = deleteTarget;
     setDeleteTarget(null);
+    // Optimistic: remove it from the list immediately, roll back on failure — no refetch either way.
+    setEntities((prev) => prev.filter((e) => e.id !== target.id));
+    const ok = await deleteEntity(target.id);
     if (!ok) {
+      setEntities((prev) => [...prev, target]);
       toast.error("Couldn't delete the entity.");
       return;
     }
-    toast.success(`Deleted ${deleteTarget.name}.`);
-    load();
+    toast.success(`Deleted ${target.name}.`);
   };
 
   const stats = [
@@ -313,6 +308,9 @@ export function EntitiesScreen() {
         onOpenChange={(next) => !next && selectEntity(null)}
         entity={selectedEntity}
         projectId={projectId}
+        types={types}
+        entities={entities}
+        relations={relations}
         onChanged={load}
       />
 
@@ -333,35 +331,14 @@ export function EntitiesScreen() {
         onMerged={load}
       />
 
-      {deleteTarget ? (
-        <EntityDeleteDialog entity={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDelete} />
-      ) : null}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title={`Delete ${deleteTarget?.name}?`}
+        description="This removes the entity from the graph. Relations and mentions pointing to it will be orphaned. This can't be undone."
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </MainScreenWrapper>
-  );
-}
-
-// Minimal confirm dialog kept local to this screen (no other graph screen needs it).
-function EntityDeleteDialog({ entity, onCancel, onConfirm }) {
-  return (
-    <Dialog open onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Delete {entity.name}?</DialogTitle>
-          <DialogDescription>
-            This removes the entity from the graph. Relations and mentions pointing to it will be
-            orphaned. This can&apos;t be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button className="bg-red-500/90 text-white hover:bg-red-500" onClick={onConfirm}>
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
