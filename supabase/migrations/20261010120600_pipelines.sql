@@ -30,6 +30,16 @@ alter table grey.model_providers enable row level security;
 drop policy if exists model_providers_member_all on grey.model_providers;
 create policy model_providers_member_all on grey.model_providers for all to authenticated
   using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
+-- Writes need the matching grey permission, not just project access.
+drop policy if exists model_providers_insert_guard on grey.model_providers;
+create policy model_providers_insert_guard on grey.model_providers as restrictive for insert to authenticated
+  with check (grey.rbac_allows('grey.provider.manage', project_id));
+drop policy if exists model_providers_update_guard on grey.model_providers;
+create policy model_providers_update_guard on grey.model_providers as restrictive for update to authenticated
+  using (grey.rbac_allows('grey.provider.manage', project_id)) with check (grey.rbac_allows('grey.provider.manage', project_id));
+drop policy if exists model_providers_delete_guard on grey.model_providers;
+create policy model_providers_delete_guard on grey.model_providers as restrictive for delete to authenticated
+  using (grey.rbac_allows('grey.provider.manage', project_id));
 
 create table if not exists grey.pipelines (
   id uuid primary key default gen_random_uuid(),
@@ -58,6 +68,16 @@ alter table grey.pipelines enable row level security;
 drop policy if exists pipelines_member_all on grey.pipelines;
 create policy pipelines_member_all on grey.pipelines for all to authenticated
   using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
+-- Publishing updates status/current_version, so grey.pipeline.publish may update as well.
+drop policy if exists pipelines_insert_guard on grey.pipelines;
+create policy pipelines_insert_guard on grey.pipelines as restrictive for insert to authenticated
+  with check (grey.rbac_allows('grey.pipeline.manage', project_id));
+drop policy if exists pipelines_update_guard on grey.pipelines;
+create policy pipelines_update_guard on grey.pipelines as restrictive for update to authenticated
+  using (grey.rbac_allows('grey.pipeline.manage', project_id) or grey.rbac_allows('grey.pipeline.publish', project_id)) with check (grey.rbac_allows('grey.pipeline.manage', project_id) or grey.rbac_allows('grey.pipeline.publish', project_id));
+drop policy if exists pipelines_delete_guard on grey.pipelines;
+create policy pipelines_delete_guard on grey.pipelines as restrictive for delete to authenticated
+  using (grey.rbac_allows('grey.pipeline.manage', project_id));
 
 create table if not exists grey.pipeline_versions (
   id uuid primary key default gen_random_uuid(),
@@ -82,6 +102,15 @@ alter table grey.pipeline_versions enable row level security;
 drop policy if exists pipeline_versions_member_all on grey.pipeline_versions;
 create policy pipeline_versions_member_all on grey.pipeline_versions for all to authenticated
   using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
+drop policy if exists pipeline_versions_insert_guard on grey.pipeline_versions;
+create policy pipeline_versions_insert_guard on grey.pipeline_versions as restrictive for insert to authenticated
+  with check (grey.rbac_allows('grey.pipeline.publish', project_id));
+drop policy if exists pipeline_versions_update_guard on grey.pipeline_versions;
+create policy pipeline_versions_update_guard on grey.pipeline_versions as restrictive for update to authenticated
+  using (grey.rbac_allows('grey.pipeline.publish', project_id)) with check (grey.rbac_allows('grey.pipeline.publish', project_id));
+drop policy if exists pipeline_versions_delete_guard on grey.pipeline_versions;
+create policy pipeline_versions_delete_guard on grey.pipeline_versions as restrictive for delete to authenticated
+  using (grey.rbac_allows('grey.pipeline.publish', project_id));
 
 create table if not exists grey.conversations (
   id uuid primary key default gen_random_uuid(),

@@ -24,7 +24,7 @@ import {
 } from "@geiger/ui/select";
 
 import { MultiSelectList } from "./multi_select_list";
-import { DEFAULT_MCP_TOOLS, MCP_TOOL_DEFS } from "./constants";
+import { DEFAULT_MCP_TOOLS, MCP_TOOL_DEFS, computeApiKeyStatus } from "./constants";
 
 const emptyDraft = () => ({
   name: "",
@@ -145,11 +145,13 @@ export function McpServerDialog({
                 <SelectValue placeholder="Select an API key" />
               </SelectTrigger>
               <SelectContent>
-                {(apiKeys || []).map((k) => (
-                  <SelectItem key={k.id} value={k.id}>
-                    {k.name} ({k.prefix}…)
-                  </SelectItem>
-                ))}
+                {(apiKeys || [])
+                  .filter((k) => computeApiKeyStatus(k) === "active")
+                  .map((k) => (
+                    <SelectItem key={k.id} value={k.id}>
+                      {k.name} ({k.prefix}…)
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </Field>

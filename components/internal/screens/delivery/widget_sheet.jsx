@@ -33,7 +33,12 @@ import {
 import { BASE_PATH } from "@/lib/base_path";
 import { cn } from "@/lib/utils";
 
-import { DEFAULT_WIDGET_THEME, WIDGET_POSITION_TABS, isValidHostname } from "./constants";
+import {
+  DEFAULT_WIDGET_THEME,
+  WIDGET_POSITION_TABS,
+  computeApiKeyStatus,
+  isValidHostname,
+} from "./constants";
 
 const emptyDraft = () => ({
   name: "",
@@ -92,6 +97,11 @@ export function WidgetSheet({ open, onOpenChange, pipelines, apiKeys, initial, o
   const [draft, setDraft] = useState(emptyDraft());
   const [saving, setSaving] = useState(false);
   const isEdit = !!initial;
+  // Revoked or expired keys can't authenticate a widget, so they aren't offered.
+  const activeKeys = useMemo(
+    () => (apiKeys || []).filter((k) => computeApiKeyStatus(k) === "active"),
+    [apiKeys],
+  );
 
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
@@ -190,7 +200,7 @@ export function WidgetSheet({ open, onOpenChange, pipelines, apiKeys, initial, o
                   <SelectValue placeholder="Select an API key" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(apiKeys || []).map((k) => (
+                  {activeKeys.map((k) => (
                     <SelectItem key={k.id} value={k.id}>
                       {k.name} ({k.prefix}…)
                     </SelectItem>
@@ -258,7 +268,10 @@ export function WidgetSheet({ open, onOpenChange, pipelines, apiKeys, initial, o
           <div className="space-y-2">
             <EditorSectionHeader title="Embed snippet" />
             {embedSnippet ? (
-              <CopyBlock value={embedSnippet} label="Paste before </body>" multiline />
+              <>
+                <CopyBlock value={embedSnippet} label="Paste before </body>" multiline />
+                <p className="text-xs text-text-tertiary">Widget runtime ships with the serving backend.</p>
+              </>
             ) : (
               <p className="text-sm text-text-secondary">
                 Save the widget to generate its embed snippet.

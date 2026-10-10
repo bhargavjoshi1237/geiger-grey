@@ -29,9 +29,24 @@ create unique index if not exists api_keys_key_hash_uniq on grey.api_keys(key_ha
 drop trigger if exists api_keys_touch on grey.api_keys;
 create trigger api_keys_touch before update on grey.api_keys for each row execute function grey.touch_updated_at();
 alter table grey.api_keys enable row level security;
+-- No insert policy for authenticated: keys are minted (hashed) only by the
+-- server route under the service role. Revoke/delete need grey.apikey.manage.
 drop policy if exists api_keys_member_all on grey.api_keys;
-create policy api_keys_member_all on grey.api_keys for all to authenticated
+drop policy if exists api_keys_member_select on grey.api_keys;
+create policy api_keys_member_select on grey.api_keys for select to authenticated
+  using (grey.can_access_project(project_id));
+drop policy if exists api_keys_member_update on grey.api_keys;
+create policy api_keys_member_update on grey.api_keys for update to authenticated
   using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
+drop policy if exists api_keys_member_delete on grey.api_keys;
+create policy api_keys_member_delete on grey.api_keys for delete to authenticated
+  using (grey.can_access_project(project_id));
+drop policy if exists api_keys_update_guard on grey.api_keys;
+create policy api_keys_update_guard on grey.api_keys as restrictive for update to authenticated
+  using (grey.rbac_allows('grey.apikey.manage', project_id)) with check (grey.rbac_allows('grey.apikey.manage', project_id));
+drop policy if exists api_keys_delete_guard on grey.api_keys;
+create policy api_keys_delete_guard on grey.api_keys as restrictive for delete to authenticated
+  using (grey.rbac_allows('grey.apikey.manage', project_id));
 
 create table if not exists grey.mcp_servers (
   id uuid primary key default gen_random_uuid(),
@@ -55,6 +70,15 @@ alter table grey.mcp_servers enable row level security;
 drop policy if exists mcp_servers_member_all on grey.mcp_servers;
 create policy mcp_servers_member_all on grey.mcp_servers for all to authenticated
   using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
+drop policy if exists mcp_servers_insert_guard on grey.mcp_servers;
+create policy mcp_servers_insert_guard on grey.mcp_servers as restrictive for insert to authenticated
+  with check (grey.rbac_allows('grey.mcp.manage', project_id));
+drop policy if exists mcp_servers_update_guard on grey.mcp_servers;
+create policy mcp_servers_update_guard on grey.mcp_servers as restrictive for update to authenticated
+  using (grey.rbac_allows('grey.mcp.manage', project_id)) with check (grey.rbac_allows('grey.mcp.manage', project_id));
+drop policy if exists mcp_servers_delete_guard on grey.mcp_servers;
+create policy mcp_servers_delete_guard on grey.mcp_servers as restrictive for delete to authenticated
+  using (grey.rbac_allows('grey.mcp.manage', project_id));
 
 create table if not exists grey.widgets (
   id uuid primary key default gen_random_uuid(),
@@ -79,6 +103,15 @@ alter table grey.widgets enable row level security;
 drop policy if exists widgets_member_all on grey.widgets;
 create policy widgets_member_all on grey.widgets for all to authenticated
   using (grey.can_access_project(project_id)) with check (grey.can_access_project(project_id));
+drop policy if exists widgets_insert_guard on grey.widgets;
+create policy widgets_insert_guard on grey.widgets as restrictive for insert to authenticated
+  with check (grey.rbac_allows('grey.widget.manage', project_id));
+drop policy if exists widgets_update_guard on grey.widgets;
+create policy widgets_update_guard on grey.widgets as restrictive for update to authenticated
+  using (grey.rbac_allows('grey.widget.manage', project_id)) with check (grey.rbac_allows('grey.widget.manage', project_id));
+drop policy if exists widgets_delete_guard on grey.widgets;
+create policy widgets_delete_guard on grey.widgets as restrictive for delete to authenticated
+  using (grey.rbac_allows('grey.widget.manage', project_id));
 
 -- @down
 drop table if exists grey.widgets cascade;
