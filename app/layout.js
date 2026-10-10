@@ -1,6 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster, BannerProvider, GlobalBanner } from "@geiger/ui";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,17 +14,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Grey - Geiger Studio",
-  description: "Geiger Studio - Grey knowledge graph",
+  title: "Grey — Geiger",
+  description:
+    "Knowledge bases, graphs and RAG pipelines for your Geiger projects.",
 };
-
-import { BannerProvider } from "@/context/banner-context";
-import { GlobalBanner } from "@/components/internal/banner/global_banner";
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning
+      <body
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ThemeProvider
@@ -37,6 +37,7 @@ export default function RootLayout({ children }) {
               <GlobalBanner />
               {children}
             </div>
+            <Toaster />
           </BannerProvider>
         </ThemeProvider>
       </body>
