@@ -29,6 +29,7 @@ import { deletePreset, listPresets } from "@/lib/supabase/ingestion_presets";
 import { SYSTEM_TIER_PRICES } from "@/lib/grey/cost";
 import { formatCurrency, formatRelative } from "@/lib/grey/format";
 import { PresetSheet } from "./preset_sheet";
+import { PermissionTooltip } from "./permission_tooltip";
 import { PRESET_TIER_META } from "./constants";
 
 // "Auto" routes across tiers, so its price is the fast-to-high range rather
@@ -167,15 +168,20 @@ export function IngestionPresetsScreen() {
                     </div>
                     <span className="text-xs font-medium text-muted-foreground">{presetPriceLabel(preset)}</span>
                     <p className="flex-1 text-xs text-text-secondary">{preset.description || meta.description}</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="self-start border-border bg-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground"
-                      onClick={() => duplicate(preset)}
+                    <PermissionTooltip
                       disabled={!canManage}
+                      reason="You don't have permission to manage presets."
                     >
-                      <Copy className="h-3.5 w-3.5" /> Duplicate
-                    </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="self-start border-border bg-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground"
+                        onClick={() => duplicate(preset)}
+                        disabled={!canManage}
+                      >
+                        <Copy className="h-3.5 w-3.5" /> Duplicate
+                      </Button>
+                    </PermissionTooltip>
                   </div>
                 );
               })}

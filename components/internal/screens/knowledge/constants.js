@@ -60,9 +60,11 @@ export const CHUNK_STRATEGY_OPTIONS = [
 ];
 
 // --- Default preset config ----------------------------------------------------
-// Mirrors the "Balanced" system preset seed described in spec §2.2: $0.006/page,
-// $0.006/media minute, $0.04/keyframe minute, $0.50/M graph tokens, $1.02/M
-// contextual-enrichment tokens.
+// Mirrors grey.ingestion_presets' "Balanced" seed row exactly (see
+// supabase/migrations/*_ingestion.sql): layout parser with OCR, diarized media
+// transcription, graph extraction on, contextual enrichment off, at
+// $0.006/page, $0.006/media minute, $0.04/keyframe minute, $0.50/M graph
+// tokens, $1.02/M contextual-enrichment tokens.
 
 export const DEFAULT_PRESET_CONFIG = {
   parser: "layout",
@@ -75,17 +77,17 @@ export const DEFAULT_PRESET_CONFIG = {
     headingBreadcrumbs: true,
   },
   enrichment: {
-    contextual: true,
+    contextual: false,
     parentChild: false,
   },
   media: {
     transcribe: true,
-    diarize: false,
+    diarize: true,
     keyframes: false,
     windowSeconds: 45,
   },
   graph: {
-    extract: false,
+    extract: true,
   },
   prices: {
     perPage: 0.006,

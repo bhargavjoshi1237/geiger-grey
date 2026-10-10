@@ -23,13 +23,43 @@ import { IngestionSettingsForm } from "./ingestion_settings_form";
 import { DEFAULT_PRESET_CONFIG } from "./constants";
 
 const HUNDRED_PAGES = { kind: "document", pageCount: 100, tokenCount: 100 * 500 };
-const ONE_HOUR_MEDIA = { kind: "video", durationMs: 3_600_000, tokenCount: 0 };
+// ~150 spoken words/minute at ~1.3 tokens/word — a non-zero transcript token
+// count so the graph-extraction and contextual-enrichment toggles actually
+// show up in this preview (estimateFileCost prices those off file.tokenCount,
+// which a silent 0 would always zero out regardless of the toggle).
+const ONE_HOUR_MEDIA = { kind: "video", durationMs: 3_600_000, tokenCount: 60 * 150 * 1.3 };
 
 function priceLabel(estimate) {
   if (!estimate) return "—";
   return estimate.low === estimate.high
     ? formatCurrency(estimate.low)
     : `${formatCurrency(estimate.low)}–${formatCurrency(estimate.high)}`;
+}
+
+// Cost preview tile: the headline low/high figure plus, when it's made up of
+// more than one priced component (pages, media, keyframes, graph extraction,
+// contextual enrichment), the itemized breakdown so a toggle's cost is
+// visible rather than folded invisibly into the total.
+function CostPreviewTile({ title, estimate }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-card p-3">
+      <p className="text-xs text-text-secondary">{title}</p>
+      <p className="text-lg font-semibold text-foreground">{priceLabel(estimate)}</p>
+      {estimate?.breakdown?.length > 1 ? (
+        <ul className="mt-1.5 space-y-0.5">
+          {estimate.breakdown.map((item) => (
+            <li
+              key={item.label}
+              className="flex items-center justify-between gap-2 text-[11px] text-text-tertiary"
+            >
+              <span>{item.label}</span>
+              <span className="tabular-nums">{formatCurrency(item.amount, { precise: true })}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 // Create/edit Sheet for a custom ingestion preset. `seed` prefills a new
@@ -98,14 +128,8 @@ export function PresetSheet({ open, onOpenChange, projectId, preset, seed, onSav
 
           <SectionCard title="Cost preview" description="Estimated cost at the prices above.">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-border bg-surface-card p-3">
-                <p className="text-xs text-text-secondary">Per 100 pages</p>
-                <p className="text-lg font-semibold text-foreground">{priceLabel(per100Pages)}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-surface-card p-3">
-                <p className="text-xs text-text-secondary">Per hour of media</p>
-                <p className="text-lg font-semibold text-foreground">{priceLabel(perHourMedia)}</p>
-              </div>
+              <CostPreviewTile title="Per 100 pages" estimate={per100Pages} />
+              <CostPreviewTile title="Per hour of media" estimate={perHourMedia} />
             </div>
           </SectionCard>
         </div>

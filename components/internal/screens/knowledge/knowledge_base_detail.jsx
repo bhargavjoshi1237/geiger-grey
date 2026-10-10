@@ -44,6 +44,7 @@ import { formatCurrency, formatRelative } from "@/lib/grey/format";
 import { SourcesTable } from "@/components/internal/screens/sources/sources_table";
 import { ChunkBrowser } from "./chunk_browser";
 import { IngestionSettingsForm, PresetPicker } from "./ingestion_settings_form";
+import { PermissionTooltip } from "./permission_tooltip";
 import { DEFAULT_PRESET_CONFIG, EMBEDDING_MODEL_LABEL, JOB_STATUS_MAP, KB_STATUS_MAP } from "./constants";
 
 const NAV = [
@@ -58,18 +59,39 @@ function presetConfigFor(presetId, presets) {
   return presets.find((p) => p.id === presetId)?.config || DEFAULT_PRESET_CONFIG;
 }
 
+// grey.knowledge_bases.chunk_config defaults to '{}'::jsonb — never null — so
+// it is always "truthy" and can't be used as a sentinel for "no overrides
+// yet". One level deep is as deep as the config shape goes (chunking,
+// enrichment, media, graph, prices are all flat objects of leaves), so a
+// shallow per-section merge is a full deep merge for this shape.
+function mergeConfig(base, overrides) {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(overrides || {})) {
+    if (value == null) continue;
+    merged[key] =
+      typeof value === "object" && !Array.isArray(value) && typeof base?.[key] === "object"
+        ? { ...base[key], ...value }
+        : value;
+  }
+  return merged;
+}
+
+function effectiveConfig(kb, presets) {
+  return mergeConfig(presetConfigFor(kb.presetId, presets), kb.chunkConfig);
+}
+
 // Ingestion settings: preset picker + advanced overrides, saved onto the KB's
 // chunk_config override column. Re-ingest all snapshots the effective config
 // onto a fresh job per source.
 function IngestionSettingsSection({ projectId, kb, presets, canManage, canRun, onUpdate }) {
   const [presetId, setPresetId] = useState(kb.presetId || presets[0]?.id || "");
-  const [config, setConfig] = useState(() => kb.chunkConfig || presetConfigFor(kb.presetId, presets));
+  const [config, setConfig] = useState(() => effectiveConfig(kb, presets));
   const [saving, setSaving] = useState(false);
   const [reingesting, setReingesting] = useState(false);
 
   const persisted = useMemo(
-    () => ({ presetId: kb.presetId || "", config: kb.chunkConfig || presetConfigFor(kb.presetId, presets) }),
-    [kb.presetId, kb.chunkConfig, presets],
+    () => ({ presetId: kb.presetId || "", config: effectiveConfig(kb, presets) }),
+    [kb, presets],
   );
   const dirty =
     presetId !== persisted.presetId || JSON.stringify(config) !== JSON.stringify(persisted.config);
@@ -93,37 +115,45 @@ function IngestionSettingsSection({ projectId, kb, presets, canManage, canRun, o
 
   const reingestAll = async () => {
     setReingesting(true);
-    const sources = (await listSources(projectId, { kbId: kb.id })) || [];
-    const selectedPreset = presets.find((p) => p.id === presetId);
-    const jobs = sources.map((source) => {
-      const estimate = estimateFileCost(
-        {
-          kind: source.kind,
-          pageCount: source.pageCount,
-          durationMs: source.durationMs,
-          tokenCount: source.tokenCount,
-        },
-        { tier: selectedPreset?.tier || "custom", config },
+    try {
+      const sources = (await listSources(projectId, { kbId: kb.id })) || [];
+      const selectedPreset = presets.find((p) => p.id === presetId);
+      const jobs = sources.map((source) => {
+        const estimate = estimateFileCost(
+          {
+            kind: source.kind,
+            pageCount: source.pageCount,
+            durationMs: source.durationMs,
+            tokenCount: source.tokenCount,
+          },
+          { tier: selectedPreset?.tier || "custom", config },
+        );
+        return {
+          kbId: kb.id,
+          sourceId: source.id,
+          presetSnapshot: { presetId, tier: selectedPreset?.tier, config },
+          status: "queued",
+          stage: "parse",
+          progress: 0,
+          estimatedCost: estimate?.low ?? 0,
+        };
+      });
+      const created = jobs.length ? await createJobs(projectId, jobs) : [];
+      if (jobs.length && !created) {
+        toast.error("Couldn't queue re-ingestion jobs.");
+        return;
+      }
+      toast.success(
+        jobs.length
+          ? `Queued ${jobs.length} source${jobs.length === 1 ? "" : "s"} for re-ingestion.`
+          : "No sources to re-ingest yet.",
       );
-      return {
-        kbId: kb.id,
-        sourceId: source.id,
-        presetSnapshot: { presetId, tier: selectedPreset?.tier, config },
-        status: "queued",
-        stage: "parse",
-        progress: 0,
-        estimatedCost: estimate?.low ?? 0,
-      };
-    });
-    const created = jobs.length ? await createJobs(projectId, jobs) : [];
-    setReingesting(false);
-    if (jobs.length && !created) {
+    } catch (error) {
+      console.error("[knowledge_base_detail.reingestAll]", error);
       toast.error("Couldn't queue re-ingestion jobs.");
-      return;
+    } finally {
+      setReingesting(false);
     }
-    toast.success(
-      jobs.length ? `Queued ${jobs.length} source${jobs.length === 1 ? "" : "s"} for re-ingestion.` : "No sources to re-ingest yet.",
-    );
   };
 
   return (
@@ -150,25 +180,30 @@ function IngestionSettingsSection({ projectId, kb, presets, canManage, canRun, o
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-          onClick={save}
-          disabled={!canManage || !dirty || saving}
-          title={canManage ? undefined : "You don't have permission to manage this knowledge base."}
+        <PermissionTooltip
+          disabled={!canManage}
+          reason="You don't have permission to manage this knowledge base."
         >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Save
-        </Button>
-        <Button
-          variant="outline"
-          className="border-border bg-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground"
-          onClick={reingestAll}
-          disabled={!canRun || reingesting}
-          title={canRun ? undefined : "You don't have permission to run ingestion."}
-        >
-          {reingesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-          Re-ingest all
-        </Button>
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={save}
+            disabled={!canManage || !dirty || saving}
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Save
+          </Button>
+        </PermissionTooltip>
+        <PermissionTooltip disabled={!canRun} reason="You don't have permission to run ingestion.">
+          <Button
+            variant="outline"
+            className="border-border bg-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground"
+            onClick={reingestAll}
+            disabled={!canRun || reingesting}
+          >
+            {reingesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+            Re-ingest all
+          </Button>
+        </PermissionTooltip>
       </div>
     </div>
   );
@@ -286,25 +321,33 @@ function DangerZoneSection({ kb, canManage, onUpdate, onDelete }) {
         className="border-red-500/20"
       >
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            className="border-border bg-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground"
-            onClick={toggleArchive}
+          <PermissionTooltip
             disabled={!canManage}
-            title={canManage ? undefined : "You don't have permission to manage this knowledge base."}
+            reason="You don't have permission to manage this knowledge base."
           >
-            {archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-            {archived ? "Restore" : "Archive"}
-          </Button>
-          <Button
-            variant="outline"
-            className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 hover:text-red-300"
-            onClick={() => setDeleteOpen(true)}
+            <Button
+              variant="outline"
+              className="border-border bg-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground"
+              onClick={toggleArchive}
+              disabled={!canManage}
+            >
+              {archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+              {archived ? "Restore" : "Archive"}
+            </Button>
+          </PermissionTooltip>
+          <PermissionTooltip
             disabled={!canManage}
-            title={canManage ? undefined : "You don't have permission to manage this knowledge base."}
+            reason="You don't have permission to manage this knowledge base."
           >
-            <Trash2 className="h-4 w-4" /> Delete
-          </Button>
+            <Button
+              variant="outline"
+              className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              onClick={() => setDeleteOpen(true)}
+              disabled={!canManage}
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          </PermissionTooltip>
         </div>
       </SectionCard>
 
