@@ -53,4 +53,4 @@ Combined final run: `node --test lib/workspace/tabs.test.js geiger-rbac.config.t
 - `node_modules` junction was created but not committed (confirmed not tracked by `git status`).
 
 ## Commit
-(to be filled in after `git add -A` of task files + commit; see final message for the SHA)
+`b923b09` — `feat(grey): nav tree, nav config, RBAC catalog, tab slugs` on branch `worktree-agent-a6d91a03550540388`.
