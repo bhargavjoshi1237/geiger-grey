@@ -54,7 +54,7 @@ All tables: `id uuid pk default gen_random_uuid()`, `project_id uuid references 
 - `grey.can_access_project(uuid)`, `grey.touch_updated_at()`; grants on schema to `anon, authenticated, service_role`.
 - RBAC: `migrationSql("grey")` output (`grey.role_grants`, `grey.rbac_allows`) + owner backfill.
 - Team (ported from events, schema renamed): `grey.project_members`, `grey.member_activity`, RPCs `grey.rbac_ensure_membership`, `grey.rbac_role_for_member`, `grey.sync_project_team`; write guards on roles/grants/members.
-- `grey.user_nav_prefs` (`user_id`, `hidden jsonb`).
+- Nav prefs live in the suite-shared `public.user_nav_prefs` (owned and migrated by geiger-dash; keyed by product, surface, project, user; no deleted_at) — Grey reads/writes it with product `grey`, exactly like events. No grey migration.
 
 ### 2.2 Ingestion
 - `ingestion_presets`: `name`, `tier` (`fast|balanced|high|auto|custom`), `is_system bool`, `description`, `config jsonb`. System rows have `project_id null`, readable by all authenticated users. `config` shape:
