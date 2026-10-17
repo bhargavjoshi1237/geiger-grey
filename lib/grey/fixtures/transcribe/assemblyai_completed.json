@@ -1,0 +1,48 @@
+{
+  "id": "5551722-f677-48a2-b1d2-0c3b6c8ee7c5",
+  "status": "completed",
+  "speech_model_used": "universal-2",
+  "language_code": "en_us",
+  "audio_duration": 13,
+  "text": "Welcome to the show. Thanks for having me. Let's begin.",
+  "words": [
+    { "text": "Welcome", "start": 240, "end": 640, "confidence": 0.98, "speaker": "A" },
+    { "text": "to", "start": 640, "end": 760, "confidence": 0.99, "speaker": "A" },
+    { "text": "the", "start": 760, "end": 880, "confidence": 0.99, "speaker": "A" },
+    { "text": "show.", "start": 880, "end": 1400, "confidence": 0.97, "speaker": "A" },
+    { "text": "Thanks", "start": 2100, "end": 2500, "confidence": 0.96, "speaker": "B" },
+    { "text": "for", "start": 2500, "end": 2620, "confidence": 0.99, "speaker": "B" },
+    { "text": "having", "start": 2620, "end": 2900, "confidence": 0.98, "speaker": "B" },
+    { "text": "me.", "start": 2900, "end": 3200, "confidence": 0.98, "speaker": "B" },
+    { "text": "Let's", "start": 11800, "end": 12100, "confidence": 0.95, "speaker": "A" },
+    { "text": "begin.", "start": 12100, "end": 12700, "confidence": 0.97, "speaker": "A" }
+  ],
+  "utterances": [
+    {
+      "speaker": "A", "start": 240, "end": 1400, "confidence": 0.98, "text": "Welcome to the show.",
+      "words": [
+        { "text": "Welcome", "start": 240, "end": 640, "confidence": 0.98, "speaker": "A" },
+        { "text": "to", "start": 640, "end": 760, "confidence": 0.99, "speaker": "A" },
+        { "text": "the", "start": 760, "end": 880, "confidence": 0.99, "speaker": "A" },
+        { "text": "show.", "start": 880, "end": 1400, "confidence": 0.97, "speaker": "A" }
+      ]
+    },
+    {
+      "speaker": "B", "start": 2100, "end": 3200, "confidence": 0.97, "text": "Thanks for having me.",
+      "words": [
+        { "text": "Thanks", "start": 2100, "end": 2500, "confidence": 0.96, "speaker": "B" },
+        { "text": "for", "start": 2500, "end": 2620, "confidence": 0.99, "speaker": "B" },
+        { "text": "having", "start": 2620, "end": 2900, "confidence": 0.98, "speaker": "B" },
+        { "text": "me.", "start": 2900, "end": 3200, "confidence": 0.98, "speaker": "B" }
+      ]
+    },
+    {
+      "speaker": "A", "start": 11800, "end": 12700, "confidence": 0.96, "text": "Let's begin.",
+      "words": [
+        { "text": "Let's", "start": 11800, "end": 12100, "confidence": 0.95, "speaker": "A" },
+        { "text": "begin.", "start": 12100, "end": 12700, "confidence": 0.97, "speaker": "A" }
+      ]
+    }
+  ],
+  "error": null
+}

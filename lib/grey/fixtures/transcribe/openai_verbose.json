@@ -1,0 +1,12 @@
+{
+  "task": "transcribe",
+  "language": "english",
+  "duration": 9.5,
+  "text": "The quick brown fox. Jumps over the lazy dog.",
+  "segments": [
+    { "id": 0, "seek": 0, "start": 0.0, "end": 4.2, "text": " The quick brown fox.", "tokens": [50364, 440], "temperature": 0.0, "avg_logprob": -0.2, "compression_ratio": 1.1, "no_speech_prob": 0.01 },
+    { "id": 1, "seek": 0, "start": 4.2, "end": 9.48, "text": " Jumps over the lazy dog.", "tokens": [50574, 508], "temperature": 0.0, "avg_logprob": -0.2, "compression_ratio": 1.1, "no_speech_prob": 0.01 },
+    { "id": 2, "seek": 0, "start": 9.48, "end": 9.5, "text": " ", "tokens": [], "temperature": 0.0, "avg_logprob": -1.0, "compression_ratio": 0.0, "no_speech_prob": 0.9 }
+  ],
+  "usage": { "type": "duration", "seconds": 10 }
+}

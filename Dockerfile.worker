@@ -1,0 +1,30 @@
+# Grey worker (spec §5.6) — host-agnostic. Build from the repository root:
+#   docker build -f Dockerfile.worker -t grey-worker .
+# Runtime env: WORKER_DATABASE_URL (session pooler, port 5432), NEXT_PUBLIC_SUPABASE_URL,
+# SUPABASE_SERVICE_ROLE_KEY, optional WORKER_* tuning, ASSETS_INTERNAL_URL, GEIGER_INTERNAL_TOKEN,
+# GREY_MAX_MEDIA_MINUTES, GREY_OCR_URL, PORT (health endpoint, default 8080).
+# No AI provider keys: they are read per project from Vault at call time.
+# Provider base URLs on private/local networks (self-hosted Ollama, vLLM, TEI…) are refused unless
+# GREY_ALLOW_LOCAL_PROVIDERS=1 is set — enable it only when the worker runs inside that network.
+# Optional WORKER_DATABASE_CA (PEM or file path) verifies the database TLS certificate.
+FROM node:24-slim
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+# Dependencies live in /app/node_modules so /app/worker and /app/lib/{grey,engine} all resolve
+# them by walking up; /app/package.json ("type": "module") also makes lib/**/*.js load as ESM.
+COPY worker/package.json worker/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
+
+COPY worker/ ./worker/
+COPY lib/grey/ ./lib/grey/
+COPY lib/engine/ ./lib/engine/
+
+USER node
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 8080) + '/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+
+# Exec form so SIGTERM reaches node (drain up to 25 s, then jobs are released).
+CMD ["node", "worker/index.mjs"]

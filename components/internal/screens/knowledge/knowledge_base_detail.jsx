@@ -10,7 +10,9 @@ import {
   Files,
   Layers,
   Loader2,
+  Lock,
   RefreshCcw,
+  ScanSearch,
   SlidersHorizontal,
   TriangleAlert,
   Trash2,
@@ -22,9 +24,18 @@ import {
   EmptyState,
   LoadingArea,
   SectionCard,
+  SettingRow,
+  SettingsList,
   StatusPill,
 } from "@/components/internal/shared/screen_kit";
 import { Button } from "@geiger/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@geiger/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -38,14 +49,17 @@ import { useCan } from "@/context/rbac-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { listSources } from "@/lib/supabase/sources";
 import { listJobs, createJobs } from "@/lib/supabase/ingestion_jobs";
-import { updateKnowledgeBase, deleteKnowledgeBase } from "@/lib/supabase/knowledge_bases";
+import { updateKnowledgeBase, deleteKnowledgeBase, detectEmbeddingDims } from "@/lib/supabase/knowledge_bases";
+import { listProviders } from "@/lib/supabase/model_providers";
 import { estimateFileCost } from "@/lib/grey/cost";
+import { embeddingModelLabel, resolveEmbeddingSpec } from "@/lib/grey/embedding_models";
+import { PROVIDER_KINDS, driverFormat, hasCapability } from "@/lib/grey/provider_kinds";
 import { formatCurrency, formatRelative } from "@/lib/grey/format";
 import { SourcesTable } from "@/components/internal/screens/sources/sources_table";
 import { ChunkBrowser } from "./chunk_browser";
 import { IngestionSettingsForm, PresetPicker } from "./ingestion_settings_form";
 import { PermissionTooltip } from "./permission_tooltip";
-import { DEFAULT_PRESET_CONFIG, EMBEDDING_MODEL_LABEL, JOB_STATUS_MAP, KB_STATUS_MAP } from "./constants";
+import { DEFAULT_PRESET_CONFIG, EMBEDDING_ERROR_MESSAGES, JOB_STATUS_MAP, KB_STATUS_MAP } from "./constants";
 
 const NAV = [
   { key: "sources", label: "Sources", icon: Files },
@@ -78,6 +92,153 @@ function mergeConfig(base, overrides) {
 
 function effectiveConfig(kb, presets) {
   return mergeConfig(presetConfigFor(kb.presetId, presets), kb.chunkConfig);
+}
+
+// Embedding connection for this KB. The model is locked from creation and the
+// dimensions once detected; the connection can move (key rotation, account move)
+// but only to one with the same embed driver format — the DB trigger enforces it.
+function EmbeddingCard({ projectId, kb, canManage, onUpdate }) {
+  const { setTab } = useWorkspaceUrl();
+  const [providers, setProviders] = useState(null);
+  const [providerId, setProviderId] = useState(kb.embeddingProviderId || "");
+  const [dims, setDims] = useState(kb.embeddingDims ?? null);
+  const [detecting, setDetecting] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    listProviders(projectId).then((rows) => {
+      if (alive) setProviders(rows || []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
+
+  const spec = resolveEmbeddingSpec(kb);
+  const current = (providers || []).find((p) => p.id === kb.embeddingProviderId) || null;
+  // Same format as the current connection (by kind), or the legacy model's format.
+  const requiredFormat = current ? PROVIDER_KINDS[current.provider]?.formats?.embed || null : spec.format;
+  const options = (providers || []).filter(
+    (p) => hasCapability(p, "embed") && (!requiredFormat || driverFormat(p, "embed") === requiredFormat),
+  );
+  const dimsLocked = kb.embeddingDims != null;
+  const dirty = providerId !== (kb.embeddingProviderId || "") || (!dimsLocked && dims != null);
+
+  const detect = async () => {
+    setDetecting(true);
+    const { data, error } = await detectEmbeddingDims(projectId, {
+      providerId,
+      model: kb.embeddingModel,
+      requestedDims: spec.legacy ? spec.dims : undefined,
+    });
+    setDetecting(false);
+    if (error || !data?.dims) {
+      toast.error(EMBEDDING_ERROR_MESSAGES[error] || "Couldn't detect the model's dimensions.");
+      return;
+    }
+    setDims(data.dims);
+  };
+
+  const save = async () => {
+    const patch = {};
+    if (providerId !== (kb.embeddingProviderId || "")) patch.embeddingProviderId = providerId;
+    if (!dimsLocked && dims != null) patch.embeddingDims = dims;
+    setSaving(true);
+    const saved = await updateKnowledgeBase(kb.id, patch);
+    setSaving(false);
+    if (!saved) {
+      toast.error("Couldn't save the embedding connection — it must use the same embedding format.");
+      return;
+    }
+    onUpdate(saved);
+    toast.success("Embedding settings saved.");
+  };
+
+  const lockedValue = (text) => (
+    <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
+      <Lock className="h-3.5 w-3.5 text-text-tertiary" />
+      {text}
+    </span>
+  );
+
+  return (
+    <SectionCard
+      title="Embeddings"
+      description="The connection and model that embed this knowledge base's chunks and queries."
+      action={
+        canManage && dirty ? (
+          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Save
+          </Button>
+        ) : null
+      }
+    >
+      <SettingsList>
+        <SettingRow
+          title="Connection"
+          description={
+            requiredFormat
+              ? "Can move to another connection that uses the same embedding format."
+              : "The provider connection used for embeddings."
+          }
+          control={
+            providers !== null && !options.length ? (
+              <button
+                type="button"
+                onClick={() => setTab("Model Providers")}
+                className="text-xs font-medium text-text-secondary underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Connect one in Model Providers
+              </button>
+            ) : (
+              <Select value={providerId} onValueChange={setProviderId} disabled={!canManage || providers === null}>
+                <SelectTrigger className="w-56">
+                  <SelectValue placeholder={providers === null ? "Loading…" : "Select a connection"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {options.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
+          }
+        />
+        <SettingRow
+          title="Model"
+          description="Locked when the knowledge base was created."
+          control={lockedValue(embeddingModelLabel(kb.embeddingModel))}
+        />
+        <SettingRow
+          title="Dimensions"
+          description={dimsLocked ? "Locked once detected." : "Detect them once; they lock when saved."}
+          control={
+            dimsLocked ? (
+              lockedValue(`${kb.embeddingDims}`)
+            ) : (
+              <div className="flex items-center gap-2">
+                {dims ? <span className="text-sm text-foreground">{dims}</span> : null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-border bg-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground"
+                  onClick={detect}
+                  disabled={!canManage || !providerId || detecting}
+                >
+                  {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
+                  Detect
+                </Button>
+              </div>
+            )
+          }
+        />
+      </SettingsList>
+    </SectionCard>
+  );
 }
 
 // Ingestion settings: preset picker + advanced overrides, saved onto the KB's
@@ -158,14 +319,13 @@ function IngestionSettingsSection({ projectId, kb, presets, canManage, canRun, o
 
   return (
     <div className="space-y-5">
+      <EmbeddingCard projectId={projectId} kb={kb} canManage={canManage} onUpdate={onUpdate} />
+
       <SectionCard title="Preset" description="Pick a tier, then fine-tune under Advanced.">
         <PresetPicker presets={presets} value={presetId} onChange={canManage ? pickPreset : undefined} />
       </SectionCard>
 
-      <SectionCard
-        title="Settings"
-        description={`Embedding model: ${EMBEDDING_MODEL_LABEL[kb.embeddingModel] || kb.embeddingModel} (locked)`}
-      >
+      <SectionCard title="Settings" description="Parsing, chunking, enrichment, media and graph options.">
         <IngestionSettingsForm value={config} onChange={setConfig} disabled={!canManage} showPrices={false} />
       </SectionCard>
 

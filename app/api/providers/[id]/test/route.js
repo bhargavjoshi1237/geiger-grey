@@ -2,9 +2,12 @@ import { handle, json, ApiError } from "@/lib/server/errors";
 import { authenticate, authorize, isUuid } from "@/lib/server/auth";
 import { adminClient } from "@/lib/supabase/admin";
 import { toCamel } from "@/lib/server/case";
+import { runProviderTest } from "@/lib/server/provider_test";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
+// Makes one minimal real call per capability and records status/last_checked_at/metadata.lastError.
 export const POST = handle(async (request, { params }) => {
   const { id } = await params;
   const user = await authenticate(request); // auth before any DB read, to avoid an existence leak
@@ -28,14 +31,6 @@ export const POST = handle(async (request, { params }) => {
     notFoundOnDenied: true, notFoundMessage: "Provider not found.",
   });
 
-  const status = provider.secret_id ? "ok" : "error";
-  const { data: updated, error: updateError } = await admin.from("model_providers")
-    .update({ status, last_checked_at: new Date().toISOString() })
-    .eq("id", id).is("deleted_at", null).select("*").maybeSingle();
-  if (updateError || !updated) {
-    console.error("[api.providers.test.update]", updateError);
-    throw new ApiError("service_unavailable", 503, "Could not test the provider.");
-  }
-
+  const updated = await runProviderTest({ admin, provider });
   return json(toCamel(updated));
 });

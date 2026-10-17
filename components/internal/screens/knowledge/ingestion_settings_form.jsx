@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Info } from "lucide-react";
 
 import {
   Accordion,
@@ -67,6 +68,16 @@ export function PresetPicker({ presets, value, onChange }) {
   );
 }
 
+// Title for a setting that isn't available yet.
+function ComingSoonTitle({ children }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      {children}
+      <Badge variant="neutral">Coming soon</Badge>
+    </span>
+  );
+}
+
 // Shared ingestion settings editor: parser/OCR up top, everything else tucked
 // into a collapsed "Advanced" accordion. Used by both the KB "Ingestion
 // settings" section (showPrices=false — price basis belongs to the preset) and
@@ -112,6 +123,11 @@ export function IngestionSettingsForm({ value, onChange, disabled = false, showP
             />
           }
         />
+      </div>
+
+      <div className="flex items-start gap-2.5 rounded-lg border border-border bg-surface-card px-3.5 py-2.5 text-xs leading-relaxed text-text-secondary">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+        <p>Layout and OCR parsing are coming soon; documents are currently parsed as text.</p>
       </div>
 
       <Accordion type="single" collapsible>
@@ -220,15 +236,9 @@ export function IngestionSettingsForm({ value, onChange, disabled = false, showP
                     }
                   />
                   <SettingRow
-                    title="Parent-child chunking"
+                    title={<ComingSoonTitle>Parent-child chunking</ComingSoonTitle>}
                     description="Retrieve small chunks, pass their larger parent chunk to the model."
-                    control={
-                      <Switch
-                        checked={!!enrichment.parentChild}
-                        onCheckedChange={(v) => patchSection("enrichment", "parentChild", v)}
-                        disabled={disabled}
-                      />
-                    }
+                    control={<Switch checked={false} disabled aria-label="Parent-child chunking (coming soon)" />}
                   />
                 </SettingsList>
               </section>
@@ -261,33 +271,13 @@ export function IngestionSettingsForm({ value, onChange, disabled = false, showP
                     }
                   />
                   <SettingRow
-                    title="Keyframes"
+                    title={<ComingSoonTitle>Keyframes</ComingSoonTitle>}
                     description="Extract and caption keyframes from video."
-                    control={
-                      <Switch
-                        checked={!!media.keyframes}
-                        onCheckedChange={(v) => patchSection("media", "keyframes", v)}
-                        disabled={disabled}
-                      />
-                    }
+                    control={<Switch checked={false} disabled aria-label="Keyframes (coming soon)" />}
                   />
                 </SettingsList>
-                <Field
-                  label="Keyframe window (seconds)"
-                  stepper
-                  value={media.windowSeconds ?? 45}
-                  onValueChange={(v) => patchSection("media", "windowSeconds", Number(v))}
-                  step={5}
-                  min={5}
-                  max={300}
-                  className="max-w-xs"
-                >
-                  <Input
-                    type="number"
-                    value={media.windowSeconds ?? 45}
-                    onChange={(e) => patchSection("media", "windowSeconds", Number(e.target.value) || 0)}
-                    disabled={disabled || !media.keyframes}
-                  />
+                <Field label="Keyframe window (seconds)" className="max-w-xs">
+                  <Input type="number" value={media.windowSeconds ?? 45} readOnly disabled />
                 </Field>
               </section>
 

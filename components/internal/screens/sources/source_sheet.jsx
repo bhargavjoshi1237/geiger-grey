@@ -21,8 +21,10 @@ import {
 } from "@geiger/ui/sheet";
 import { StatusPill } from "@/components/internal/shared/screen_kit";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
+import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { listJobs } from "@/lib/supabase/ingestion_jobs";
-import { listEntities, listMentions } from "@/lib/supabase/graph";
+import { listEntitiesByIds, listMentions } from "@/lib/supabase/graph";
 import { formatBytes, formatDuration, formatRelative } from "@/lib/grey/format";
 import {
   FRESHNESS_MAP,
@@ -45,38 +47,133 @@ function Row({ label, value }) {
   );
 }
 
+// The distinct entities mentioned in one source, in mention order: its mentions first, then only
+// the entities those mentions point at.
+async function listSourceEntities(projectId, sourceId) {
+  const mentions = (await listMentions(projectId, { sourceId })) ?? [];
+  const ids = [...new Set(mentions.map((m) => m.entityId).filter(Boolean))];
+  if (!ids.length) return [];
+  const byId = new Map(((await listEntitiesByIds(projectId, ids)) ?? []).map((e) => [e.id, e]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
 function useSourceDetail(source, projectId) {
   const sourceId = source?.id || null;
   // Reset to the "not ready" shape during render as soon as the sheet swaps
   // to a different source — the endorsed way to clear derived state on a
   // prop change, instead of an extra setState call inside the effect below.
-  const [data, setData] = useState({ sourceId: null, jobs: [], mentions: [], ready: false });
+  const [data, setData] = useState({ sourceId: null, jobs: [], entities: [], ready: false });
   if (sourceId !== data.sourceId) {
-    setData({ sourceId, jobs: [], mentions: [], ready: false });
+    setData({ sourceId, jobs: [], entities: [], ready: false });
   }
 
   useEffect(() => {
     if (!sourceId) return;
     let alive = true;
-    Promise.all([
-      listJobs(projectId, { sourceId }),
-      listMentions(projectId, {}),
-      listEntities(projectId),
-    ]).then(([jobRows, mentionRows, entityRows]) => {
-      if (!alive) return;
-      const entitiesById = {};
-      for (const e of entityRows ?? []) entitiesById[e.id] = e;
-      const forSource = (mentionRows ?? [])
-        .filter((m) => m.sourceId === sourceId)
-        .map((m) => ({ ...m, entity: entitiesById[m.entityId] || null }));
-      setData({ sourceId, jobs: jobRows ?? [], mentions: forSource, ready: true });
-    });
+    Promise.all([listJobs(projectId, { sourceId }), listSourceEntities(projectId, sourceId)]).then(
+      ([jobRows, entities]) => {
+        if (!alive) return;
+        setData({ sourceId, jobs: jobRows ?? [], entities, ready: true });
+      },
+    );
     return () => {
       alive = false;
     };
   }, [sourceId, projectId]);
 
-  return { jobs: data.jobs, mentions: data.mentions, loading: !!sourceId && !data.ready };
+  return { jobs: data.jobs, entities: data.entities, loading: !!sourceId && !data.ready };
+}
+
+function parseSeconds(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
+// One-shot `?t=<seconds>` deep link (Playground citation timestamps): read once when the sheet
+// opens, then dropped from the URL (replaceState, as the URL hook does for in-place updates) so it
+// doesn't seek the next source opened from the same page.
+function useStartSeconds(sourceId) {
+  const { params } = useWorkspaceUrl();
+  const [start] = useState(() => ({ sourceId, seconds: parseSeconds(params?.t) }));
+  const hasParam = params?.t !== undefined;
+
+  useEffect(() => {
+    if (!hasParam) return;
+    const query = new URLSearchParams(window.location.search);
+    query.delete("t");
+    const qs = query.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [hasParam]);
+
+  return start.sourceId === sourceId ? start.seconds : null;
+}
+
+function hasPlayableMedia(source) {
+  if (source.kind !== "audio" && source.kind !== "video") return false;
+  return source.origin === "assets" ? !!source.originRef : !!source.storagePath;
+}
+
+// Audio/video player over a short-lived signed URL from /api/sources/[id]/media-url, seeking to
+// `startSeconds` via the #t= media fragment and again on loadedmetadata (browsers that ignore it).
+function SourceMedia({ source, startSeconds }) {
+  const [media, setMedia] = useState({ sourceId: null, url: null, error: null, ready: false });
+  if (media.sourceId !== source.id) {
+    setMedia({ sourceId: source.id, url: null, error: null, ready: false });
+  }
+
+  useEffect(() => {
+    let alive = true;
+    apiFetch(`/sources/${source.id}/media-url`).then(({ data, error }) => {
+      if (!alive) return;
+      setMedia({ sourceId: source.id, url: data?.url || null, error: error || null, ready: true });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [source.id]);
+
+  const src = media.url && startSeconds !== null ? `${media.url}#t=${startSeconds}` : media.url;
+  const seek = (event) => {
+    if (startSeconds === null) return;
+    const element = event.currentTarget;
+    element.currentTime = Number.isFinite(element.duration)
+      ? Math.min(startSeconds, element.duration)
+      : startSeconds;
+  };
+
+  return (
+    <section>
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-text-secondary">
+        {source.kind === "video" ? "Video" : "Audio"}
+      </p>
+      {!media.ready ? (
+        <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-card py-6 text-sm text-text-secondary">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading media…
+        </div>
+      ) : src ? (
+        source.kind === "video" ? (
+          <video
+            src={src}
+            controls
+            preload="metadata"
+            onLoadedMetadata={seek}
+            className="max-h-[320px] w-full rounded-lg border border-border bg-black"
+          />
+        ) : (
+          <div className="rounded-lg border border-border bg-surface-card p-3">
+            <audio src={src} controls preload="metadata" onLoadedMetadata={seek} className="w-full" />
+          </div>
+        )
+      ) : (
+        <p className="rounded-lg border border-border bg-surface-card px-3 py-4 text-sm text-text-tertiary">
+          {media.error === "not_found"
+            ? "The media file for this source isn't available."
+            : "Couldn't load the media. Try again later."}
+        </p>
+      )}
+    </section>
+  );
 }
 
 function SourceSheetBody({
@@ -91,7 +188,8 @@ function SourceSheetBody({
   onDownload,
   onDelete,
 }) {
-  const { jobs, mentions, loading } = useSourceDetail(source, projectId);
+  const { jobs, entities, loading } = useSourceDetail(source, projectId);
+  const startSeconds = useStartSeconds(source.id);
   const Icon = SOURCE_KIND_ICONS[source.kind] || SOURCE_KIND_ICONS.document;
   const freshness = freshnessOf(source);
 
@@ -120,6 +218,8 @@ function SourceSheetBody({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="space-y-6">
+          {hasPlayableMedia(source) ? <SourceMedia source={source} startSeconds={startSeconds} /> : null}
+
           <section>
             <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-text-secondary">
               Metadata
@@ -184,11 +284,15 @@ function SourceSheetBody({
             <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-text-secondary">
               Mentioned entities
             </p>
-            {mentions.length ? (
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-card py-6 text-sm text-text-secondary">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading entities…
+              </div>
+            ) : entities.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {mentions.map((m) => (
-                  <Badge key={m.id} variant="neutral">
-                    {m.entity?.name || "Unknown entity"}
+                {entities.map((entity) => (
+                  <Badge key={entity.id} variant="neutral">
+                    {entity.name || "Unnamed entity"}
                   </Badge>
                 ))}
               </div>

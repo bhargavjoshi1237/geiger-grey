@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   CircleHelp,
@@ -35,8 +35,8 @@ import {
   getConversation,
   listConversations,
   listMessages,
-  sendChat,
   setMessageFeedback,
+  streamChat,
 } from "@/lib/supabase/conversations";
 import { listPipelines } from "@/lib/supabase/pipelines";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
@@ -243,6 +243,10 @@ export function ChatScreen() {
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
+  // The in-flight streamed reply; aborted when the thread changes or the screen unmounts
+  // (the server keeps whatever partial reply it had).
+  const streamRef = useRef(null);
+  useEffect(() => () => streamRef.current?.abort(), []);
 
   const conversationIdParam = url.params?.conversation || null;
   const qParam = url.params?.q || null;
@@ -352,6 +356,7 @@ export function ChatScreen() {
   }, [pipeline, knowledgeBases]);
 
   const selectConversation = (conv) => {
+    streamRef.current?.abort();
     setMessages([]);
     setActiveConversation(conv);
     url.openRecord("conversation", conv.id);
@@ -359,6 +364,7 @@ export function ChatScreen() {
   };
 
   const startNewChat = () => {
+    streamRef.current?.abort();
     setMessages([]);
     setActiveConversation(null);
     url.closeRecord("conversation");
@@ -375,6 +381,7 @@ export function ChatScreen() {
     }
 
     const tempId = `temp-${crypto.randomUUID()}`;
+    const replyId = `reply-${crypto.randomUUID()}`;
     const optimisticUser = {
       id: tempId,
       role: "user",
@@ -386,33 +393,63 @@ export function ChatScreen() {
     setComposerValue("");
     setSending(true);
 
-    // sendChat() wraps apiFetch, which never throws/returns null — it always
-    // resolves to { data, error }.
-    const { data, error } = await sendChat({
+    const controller = new AbortController();
+    streamRef.current = controller;
+    let started = null;
+    let finished = false;
+    let failure = null;
+    let partial = "";
+
+    // streamChat() never throws — it resolves once the stream ends; events carry the reply.
+    const { error, aborted } = await streamChat({
       projectId,
       conversationId: activeConversation?.id,
       pipelineId,
       content,
       overrides,
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (event.type === "start") {
+          started = event;
+          setMessages((prev) => [
+            ...prev.map((m) => (m.id === tempId ? event.userMessage : m)),
+            { id: replyId, role: "assistant", content: "", createdAt: new Date().toISOString(), pending: true },
+          ]);
+        } else if (event.type === "delta") {
+          partial += event.text;
+          setMessages((prev) => prev.map((m) => (m.id === replyId ? { ...m, content: m.content + event.text } : m)));
+        } else if (event.type === "done") {
+          finished = true;
+          setMessages((prev) => prev.map((m) => (m.id === replyId ? event.assistantMessage : m)));
+        } else if (event.type === "error") {
+          failure = event;
+          if (event.assistantMessage) {
+            setMessages((prev) => prev.map((m) => (m.id === replyId ? event.assistantMessage : m)));
+          }
+        }
+      },
     });
 
+    if (streamRef.current === controller) streamRef.current = null;
     setSending(false);
+    if (aborted) return;
 
-    if (error || !data) {
-      toast.error(error || "Couldn't reach the chat backend. Try again.");
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    // Nothing came back: the server undid the turn, so put the question back in the composer.
+    if (!started || (!finished && !failure?.assistantMessage && !partial)) {
+      toast.error(failure?.message || error || "Couldn't get a reply. Try again.");
+      const userMessageId = started?.userMessage?.id;
+      setMessages((prev) => prev.filter((m) => m.id !== tempId && m.id !== replyId && m.id !== userMessageId));
       setComposerValue(content);
       return;
     }
 
-    setMessages((prev) => {
-      const next = prev.map((m) => (m.id === tempId ? data.userMessage : m));
-      return data.assistantMessage ? [...next, data.assistantMessage] : next;
-    });
+    // A reply that failed part-way keeps its partial text in the thread.
+    if (failure) toast.error(failure.message || "The reply stopped before it finished.");
+    else if (!finished) toast.error("The connection dropped before the reply finished.");
 
     if (!activeConversation) {
       const conv = {
-        id: data.conversationId,
+        id: started.conversationId,
         projectId,
         pipelineId,
         userId,
@@ -423,7 +460,7 @@ export function ChatScreen() {
       };
       setActiveConversation(conv);
       setConversations((prev) => [conv, ...prev.filter((c) => c.id !== conv.id)]);
-      url.openRecord("conversation", data.conversationId);
+      url.openRecord("conversation", started.conversationId);
     } else {
       setConversations((prev) =>
         prev.map((c) =>

@@ -29,8 +29,8 @@ export const truncate = (text, length = 120) => {
   return s.length > length ? `${s.slice(0, length).trim()}…` : s;
 };
 
-// A metric in eval_runs.metrics is 0..1 or null/undefined before a run has
-// actually scored (always true in this phase — the backend stays queued).
+// A metric in eval_runs.metrics is 0..1, or null/undefined until the worker has scored the run
+// (and for metrics a run couldn't compute, e.g. recall without expected sources).
 export const formatMetric = (value) =>
   typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}%` : "—";
 

@@ -23,55 +23,72 @@ import {
   SelectValue,
 } from "@geiger/ui/select";
 import { LoadingArea } from "@geiger/ui";
+import { ModelIdSelect } from "@/components/internal/shared/model_id_select";
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
+import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
+import { PROVIDER_KINDS, hasCapability, suggestedModelsFor } from "@/lib/grey/provider_kinds";
 import { getProjectSettings, saveProjectSettings } from "@/lib/supabase/project_settings";
 import { listPresets } from "@/lib/supabase/ingestion_presets";
+import { listProviders } from "@/lib/supabase/model_providers";
 
-const EMBEDDING_MODEL_OPTIONS = [
-  { value: "cohere-embed-5-pro", label: "Cohere Embed 5 Pro" },
-  { value: "cohere-embed-5-fast", label: "Cohere Embed 5 Fast" },
-  { value: "openai-text-embedding-3-large", label: "OpenAI text-embedding-3-large" },
-  { value: "voyage-3.5", label: "Voyage 3.5" },
-];
+const NONE = "none";
+
+// Chat suggestions for a connection: its own model ids first, then the kind's.
+function chatSuggestions(provider) {
+  if (!provider) return [];
+  const own = (provider.models || []).map((id) => ({ id, label: id }));
+  const seen = new Set(own.map((m) => m.id));
+  return [...own, ...suggestedModelsFor(provider, "chat").filter((m) => !seen.has(m.id))];
+}
 
 // Settings → General. Project-wide defaults that seed every new knowledge
-// base: which preset and embedding model to start from, how long sources are
-// retained, and whether queries are logged to Request Logs.
+// base (which preset to start from), the project's processing and
+// transcription models, how long sources are retained, and whether queries
+// are logged to Request Logs.
 
 export function GeneralSettingsScreen() {
   const { project, projectId } = useProject();
   const canManage = useCan("grey.settings.manage");
+  const { setTab } = useWorkspaceUrl();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [presets, setPresets] = useState([]);
+  const [providers, setProviders] = useState([]);
   // null from getProjectSettings means the read failed (not "no row yet",
   // which comes back as a defaults object) — never let the draft's built-in
   // defaults overwrite real settings in that case, so editing is blocked.
   const [settingsError, setSettingsError] = useState(false);
   const [draft, setDraft] = useState({
     defaultPresetId: null,
-    defaultEmbeddingModel: "cohere-embed-5-pro",
     retentionDays: 0,
     logQueries: true,
+    processingProviderId: null,
+    processingModel: null,
+    transcriptionProviderId: null,
+    transcriptionModel: null,
   });
 
   useEffect(() => {
     let alive = true;
-    Promise.all([getProjectSettings(projectId), listPresets(projectId)]).then(
-      ([settings, presetRows]) => {
+    Promise.all([getProjectSettings(projectId), listPresets(projectId), listProviders(projectId)]).then(
+      ([settings, presetRows, providerRows]) => {
         if (!alive) return;
         setSettingsError(settings === null);
         if (settings) {
           setDraft({
             defaultPresetId: settings.defaultPresetId ?? null,
-            defaultEmbeddingModel: settings.defaultEmbeddingModel ?? "cohere-embed-5-pro",
             retentionDays: settings.retentionDays ?? 0,
             logQueries: settings.logQueries ?? true,
+            processingProviderId: settings.processingProviderId ?? null,
+            processingModel: settings.processingModel ?? null,
+            transcriptionProviderId: settings.transcriptionProviderId ?? null,
+            transcriptionModel: settings.transcriptionModel ?? null,
           });
         }
         setPresets(presetRows ?? []);
+        setProviders(providerRows ?? []);
         setLoading(false);
       },
     );
@@ -83,6 +100,29 @@ export function GeneralSettingsScreen() {
   const controlsDisabled = !canManage || settingsError;
 
   const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
+
+  const chatProviders = providers.filter((p) => hasCapability(p, "chat"));
+  const transcribeProviders = providers.filter((p) => hasCapability(p, "transcribe"));
+  const processingProvider = chatProviders.find((p) => p.id === draft.processingProviderId) || null;
+  const transcriptionProvider = transcribeProviders.find((p) => p.id === draft.transcriptionProviderId) || null;
+
+  const pickProcessingProvider = (value) => {
+    const next = chatProviders.find((p) => p.id === value) || null;
+    setDraft((d) => ({ ...d, processingProviderId: next?.id ?? null, processingModel: chatSuggestions(next)[0]?.id ?? null }));
+  };
+
+  const pickTranscriptionProvider = (value) =>
+    setDraft((d) => ({ ...d, transcriptionProviderId: value === NONE ? null : value, transcriptionModel: null }));
+
+  const connectLink = (
+    <button
+      type="button"
+      onClick={() => setTab("Model Providers")}
+      className="font-medium text-text-secondary underline-offset-2 hover:text-foreground hover:underline"
+    >
+      Model Providers
+    </button>
+  );
 
   const handleSave = async () => {
     if (settingsError) return;
@@ -113,7 +153,7 @@ export function GeneralSettingsScreen() {
     <MainScreenWrapper>
       <ScreenHeader
         title="General"
-        description="Defaults for new knowledge bases and how long sources are kept."
+        description="Defaults for new knowledge bases, the project's models and how long sources are kept."
         actions={saveAction}
       />
 
@@ -162,23 +202,99 @@ export function GeneralSettingsScreen() {
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Default embedding model">
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Models"
+        description="Project-wide models, called through your own provider connections."
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Processing connection"
+            hint={
+              chatProviders.length ? (
+                "Graph extraction, contextual enrichment and evaluation judging. A small, fast model such as Claude Haiku 5.5 works well."
+              ) : (
+                <>No chat-capable connection yet — add one in {connectLink}.</>
+              )
+            }
+          >
             <Select
-              value={draft.defaultEmbeddingModel}
+              value={draft.processingProviderId || NONE}
               disabled={controlsDisabled}
-              onValueChange={set("defaultEmbeddingModel")}
+              onValueChange={pickProcessingProvider}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {EMBEDDING_MODEL_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
+                <SelectItem value={NONE}>None</SelectItem>
+                {chatProviders.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+          </Field>
+          <Field label="Processing model" htmlFor="processing-model">
+            {processingProvider ? (
+              <ModelIdSelect
+                key={processingProvider.id}
+                inputId="processing-model"
+                value={draft.processingModel || ""}
+                disabled={controlsDisabled}
+                onChange={(v) => set("processingModel")(v || null)}
+                suggestions={chatSuggestions(processingProvider)}
+              />
+            ) : (
+              <Input id="processing-model" value="" placeholder="Choose a connection first" disabled />
+            )}
+          </Field>
+
+          <Field
+            label="Transcription connection"
+            hint={
+              transcribeProviders.length ? (
+                "Audio and video sources. Automatic uses your only transcription connection."
+              ) : (
+                <>No transcription connection yet (e.g. AssemblyAI) — add one in {connectLink}.</>
+              )
+            }
+          >
+            <Select
+              value={draft.transcriptionProviderId || NONE}
+              disabled={controlsDisabled}
+              onValueChange={pickTranscriptionProvider}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Automatic</SelectItem>
+                {transcribeProviders.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Transcription model" htmlFor="transcription-model">
+            {transcriptionProvider ? (
+              <ModelIdSelect
+                key={transcriptionProvider.id}
+                inputId="transcription-model"
+                value={draft.transcriptionModel || ""}
+                disabled={controlsDisabled}
+                onChange={(v) => set("transcriptionModel")(v || null)}
+                suggestions={suggestedModelsFor(transcriptionProvider, "transcribe")}
+                noneLabel={PROVIDER_KINDS[transcriptionProvider.provider]?.defaultModelLabel?.transcribe || "Provider default"}
+              />
+            ) : (
+              <Input id="transcription-model" value="" placeholder="Provider default" disabled />
+            )}
           </Field>
         </div>
       </SectionCard>

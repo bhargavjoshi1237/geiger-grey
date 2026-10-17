@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Cpu, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { LoadingArea } from "@geiger/ui";
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
-import { DataTable, ScreenHeader, StatusPill } from "@/components/internal/shared/screen_kit";
+import { DataTable, EmptyState, ScreenHeader, StatusPill } from "@/components/internal/shared/screen_kit";
 import { Button } from "@geiger/ui/button";
 import { Badge } from "@geiger/ui/badge";
 import { ActionMenu } from "@geiger/ui/action-menu";
@@ -21,9 +21,11 @@ import {
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
 import { formatRelative } from "@/lib/grey/format";
+import { CAPABILITY_LABELS, capabilitiesOf } from "@/lib/grey/provider_kinds";
 import {
   createProvider,
   deleteProvider,
+  GREY_HOSTED_ENABLED,
   GREY_HOSTED_PROVIDER,
   listProviders,
   saveProviderSecret,
@@ -62,7 +64,7 @@ export function ModelProvidersScreen() {
     };
   }, [projectId]);
 
-  const rows = useMemo(() => [GREY_HOSTED_PROVIDER, ...providers], [providers]);
+  const rows = useMemo(() => (GREY_HOSTED_ENABLED ? [GREY_HOSTED_PROVIDER, ...providers] : providers), [providers]);
 
   const openCreate = () => {
     setEditing(null);
@@ -74,38 +76,54 @@ export function ModelProvidersScreen() {
     setDialogOpen(true);
   };
 
+  // Saving a key also runs the connection test server-side; the response carries the tested row.
+  const storeSecret = async (row, secret, failMessage) => {
+    const { data, error } = await saveProviderSecret(row.id, secret);
+    if (error) {
+      toast.error(failMessage);
+      return { row, tested: false };
+    }
+    const next = data?.provider
+      ? { ...row, ...data.provider }
+      : { ...row, keyLast4: data?.keyLast4 ?? row.keyLast4, status: data?.status ?? "unverified" };
+    return { row: next, tested: true };
+  };
+
+  const announce = (row, verb, tested) => {
+    if (tested && row.status === "error") {
+      toast.error(`"${row.name}" ${verb}, but the connection test failed — ${row.metadata?.lastError?.message || "check the key."}`);
+    } else if (tested && row.status === "ok") {
+      toast.success(`"${row.name}" ${verb} and connected.`);
+    } else {
+      toast.success(`"${row.name}" ${verb}.`);
+    }
+  };
+
   const handleSave = async (draft, secret) => {
     setSaving(true);
     try {
-      let next;
       if (editing) {
         const saved = await updateProvider(editing.id, draft);
         if (!saved) {
           toast.error("Couldn't save the provider.");
           return;
         }
-        next = saved;
-        if (secret) {
-          const { data, error } = await saveProviderSecret(editing.id, secret);
-          if (error) toast.error("Saved, but the key couldn't be stored.");
-          else next = { ...saved, keyLast4: data?.keyLast4 ?? saved.keyLast4, status: "unverified" };
-        }
+        const { row: next, tested } = secret
+          ? await storeSecret(saved, secret, "Saved, but the key couldn't be stored.")
+          : { row: saved, tested: false };
         setProviders((prev) => prev.map((p) => (p.id === next.id ? next : p)));
-        toast.success(`"${next.name}" updated.`);
+        announce(next, "updated", tested);
       } else {
         const created = await createProvider(projectId, draft);
         if (!created) {
           toast.error("Couldn't create the provider.");
           return;
         }
-        next = created;
-        if (secret) {
-          const { data, error } = await saveProviderSecret(created.id, secret);
-          if (error) toast.error("Created, but the key couldn't be stored.");
-          else next = { ...created, keyLast4: data?.keyLast4 ?? created.keyLast4, status: "unverified" };
-        }
+        const { row: next, tested } = secret
+          ? await storeSecret(created, secret, "Created, but the key couldn't be stored.")
+          : { row: created, tested: false };
         setProviders((prev) => [next, ...prev]);
-        toast.success(`"${next.name}" added.`);
+        announce(next, "added", tested);
       }
       setDialogOpen(false);
     } finally {
@@ -122,9 +140,10 @@ export function ModelProvidersScreen() {
       return;
     }
     setProviders((prev) => prev.map((p) => (p.id === row.id ? { ...p, ...data } : p)));
-    toast[data.status === "ok" ? "success" : "error"](
-      data.status === "ok" ? `"${row.name}" is connected.` : `"${row.name}" couldn't be verified.`,
-    );
+    if (data.status === "ok") toast.success(`"${row.name}" is connected.`);
+    else if (data.status === "error") {
+      toast.error(`"${row.name}" couldn't be verified — ${data.metadata?.lastError?.message || "check the key."}`);
+    } else toast(`Nothing on "${row.name}" can be tested automatically yet.`);
   };
 
   const handleDelete = async (row) => {
@@ -146,7 +165,7 @@ export function ModelProvidersScreen() {
       render: (row) => (
         <div className="flex flex-col gap-1">
           <span className="font-medium text-foreground">{row.name}</span>
-          <span className="text-xs text-text-secondary">{providerLabel(row.provider)}</span>
+          <span className="text-xs text-text-secondary">{providerLabel(row.provider, row.metadata?.preset)}</span>
         </div>
       ),
     },
@@ -163,13 +182,33 @@ export function ModelProvidersScreen() {
         ),
     },
     {
+      key: "capabilities",
+      header: "Capabilities",
+      render: (row) => (
+        <div className="flex max-w-xs flex-wrap gap-1">
+          {capabilitiesOf(row).map((c) => (
+            <Badge key={c} variant="neutral">
+              {CAPABILITY_LABELS[c]}
+            </Badge>
+          ))}
+        </div>
+      ),
+    },
+    {
       key: "status",
       header: "Status",
-      render: (row) => <StatusPill status={row.status} map={PROVIDER_STATUS_MAP} />,
+      render: (row) => (
+        <div className="flex flex-col items-start gap-1">
+          <StatusPill status={row.status} map={PROVIDER_STATUS_MAP} />
+          {row.status === "error" && row.metadata?.lastError?.message ? (
+            <span className="line-clamp-2 max-w-56 text-xs text-destructive-text">{row.metadata.lastError.message}</span>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "models",
-      header: "Models",
+      header: "Chat models",
       render: (row) => (
         <div className="flex max-w-xs flex-wrap gap-1">
           {(row.models || []).slice(0, 3).map((m) => (
@@ -235,7 +274,7 @@ export function ModelProvidersScreen() {
     <MainScreenWrapper>
       <ScreenHeader
         title="Model Providers"
-        description="Connect the model APIs your pipelines call. Keys are stored in Vault — only the last 4 characters are ever shown again."
+        description="Connect your own provider accounts for chat, embeddings, rerank and transcription. Keys are stored in Vault — only the last 4 characters are ever shown again."
         actions={
           canManage ? (
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={openCreate}>
@@ -248,9 +287,25 @@ export function ModelProvidersScreen() {
       {loading ? (
         <LoadingArea panel label="Loading providers" />
       ) : (
-        // `rows` always includes the built-in Grey hosted provider, so this
-        // table can never actually be empty — no `empty` state to wire up.
-        <DataTable columns={columns} data={rows} getRowKey={(row) => row.id} />
+        <DataTable
+          columns={columns}
+          data={rows}
+          getRowKey={(row) => row.id}
+          empty={
+            <EmptyState
+              icon={Cpu}
+              title="No model providers yet"
+              description="Connect a provider account to generate answers, embed knowledge bases, rerank results or transcribe media."
+              action={
+                canManage ? (
+                  <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={openCreate}>
+                    <Plus className="h-4 w-4" /> Add provider
+                  </Button>
+                ) : null
+              }
+            />
+          }
+        />
       )}
 
       <ProviderDialog

@@ -270,7 +270,9 @@ export function WidgetSheet({ open, onOpenChange, pipelines, apiKeys, initial, o
             {embedSnippet ? (
               <>
                 <CopyBlock value={embedSnippet} label="Paste before </body>" multiline />
-                <p className="text-xs text-text-tertiary">Widget runtime ships with the serving backend.</p>
+                <p className="text-xs text-text-tertiary">
+                  Add each site that embeds the widget to Allowed domains — other origins are refused.
+                </p>
               </>
             ) : (
               <p className="text-sm text-text-secondary">

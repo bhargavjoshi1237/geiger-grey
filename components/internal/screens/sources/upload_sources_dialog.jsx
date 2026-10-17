@@ -43,7 +43,7 @@ import { listImportableAssets, listImportableNotes } from "@/lib/supabase/suite_
 import { analyzeFile } from "@/lib/grey/file_analysis";
 import { estimateFileCost, estimateTotal } from "@/lib/grey/cost";
 import { formatBytes, formatCurrency, formatDuration } from "@/lib/grey/format";
-import { SOURCE_KIND_ICONS, SOURCE_KIND_LABELS, buildQueuedJob } from "./constants";
+import { SOURCE_KIND_ICONS, SOURCE_KIND_LABELS, buildQueuedJob, effectivePreset } from "./constants";
 
 function kindFromMime(mime) {
   if (!mime) return "document";
@@ -100,6 +100,7 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
       setUrlValue("");
       setSelectedImport(new Set());
       setKbId(defaultKbId || "");
+      setPresetId("");
       setImportAssets(null);
       setImportNotes(null);
     }
@@ -117,6 +118,9 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
         setPresets(presetRows ?? []);
         setPresetId((prev) => {
           if (prev) return prev;
+          // Default to the knowledge base's own preset so its saved settings apply.
+          const kbPresetId = (kbRows ?? []).find((kb) => kb.id === defaultKbId)?.presetId;
+          if (kbPresetId && (presetRows ?? []).some((p) => p.id === kbPresetId)) return kbPresetId;
           const balanced = (presetRows ?? []).find((p) => p.tier === "balanced");
           return balanced?.id || presetRows?.[0]?.id || "";
         });
@@ -125,7 +129,7 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
     return () => {
       alive = false;
     };
-  }, [open, projectId]);
+  }, [open, projectId, defaultKbId]);
 
   useEffect(() => {
     if (!open || tab !== "import" || (importAssets !== null && importNotes !== null)) return;
@@ -142,7 +146,19 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
     };
   }, [open, tab, projectId, importAssets, importNotes]);
 
-  const preset = useMemo(() => presets.find((p) => p.id === presetId) || null, [presets, presetId]);
+  const selectedKb = useMemo(() => kbs.find((kb) => kb.id === kbId) || null, [kbs, kbId]);
+  // The chosen preset merged with the knowledge base's saved ingestion settings —
+  // what the estimate shows and what each job snapshots (as "Re-ingest all" does).
+  const preset = useMemo(
+    () => effectivePreset(presets.find((p) => p.id === presetId) || null, selectedKb),
+    [presets, presetId, selectedKb],
+  );
+
+  const pickKb = (id) => {
+    setKbId(id);
+    const kbPresetId = kbs.find((kb) => kb.id === id)?.presetId;
+    if (kbPresetId && presets.some((p) => p.id === kbPresetId)) setPresetId(kbPresetId);
+  };
 
   const addFiles = (incoming) => {
     const list = Array.from(incoming || []);
@@ -289,7 +305,7 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
           id,
           kbId,
           name: item.name || item.title || "Untitled",
-          kind: kindFromMime(item.mime),
+          kind: item.kind ?? kindFromMime(item.mime),
           origin: item.origin,
           originRef: item.id,
           mime: item.mime || null,
@@ -388,7 +404,7 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Knowledge base">
-            <Select value={kbId} onValueChange={setKbId} disabled={!!defaultKbId}>
+            <Select value={kbId} onValueChange={pickKb} disabled={!!defaultKbId}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Choose a knowledge base" />
               </SelectTrigger>
@@ -533,7 +549,7 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
           </TabsContent>
 
           <TabsContent value="url" className="mt-3 space-y-3">
-            <Field label="URL" hint="The page will be fetched and ingested once the backend is connected.">
+            <Field label="URL" hint="Grey fetches the page and indexes its main content.">
               <Input
                 value={urlValue}
                 onChange={(e) => setUrlValue(e.target.value)}

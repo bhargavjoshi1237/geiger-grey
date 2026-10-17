@@ -1,0 +1,34 @@
+{
+  "name": "geiger-grey-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Grey background worker: ingestion and eval runs.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node index.mjs",
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.82",
+    "@ai-sdk/google": "4.0.99",
+    "@ai-sdk/openai": "4.0.96",
+    "@ai-sdk/openai-compatible": "3.0.71",
+    "@mozilla/readability": "0.6.0",
+    "@supabase/supabase-js": "2.105.4",
+    "ai": "7.0.143",
+    "exceljs": "4.4.0",
+    "gpt-tokenizer": "4.0.3",
+    "linkedom": "0.18.13",
+    "mammoth": "1.13.0",
+    "marked": "18.1.1",
+    "officeparser": "8.1.1",
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "turndown": "7.2.4",
+    "unpdf": "1.9.0",
+    "zod": "4.6.7"
+  }
+}

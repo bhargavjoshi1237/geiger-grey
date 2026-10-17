@@ -60,6 +60,7 @@ import {
   SOURCE_STATUS_FILTER_OPTIONS,
   SOURCE_STATUS_MAP,
   buildQueuedJob,
+  effectivePreset,
   describeSourceSize,
   freshnessOf,
 } from "./constants";
@@ -162,14 +163,16 @@ export function SourcesTable({ projectId, kbId }) {
     [openSourceId, sources],
   );
 
+  // The KB's preset merged with the KB's own chunk-config overrides, so a single-source
+  // re-ingest runs with the same settings as "Re-ingest all" and new uploads.
   const resolvePreset = (source) => {
     const kb = kbsById[source.kbId];
-    return (
+    const preset =
       presetsById[kb?.presetId] ||
       presets.find((p) => p.tier === "balanced") ||
       presets[0] ||
-      null
-    );
+      null;
+    return effectivePreset(preset, kb);
   };
 
   const handleReingest = async (source) => {

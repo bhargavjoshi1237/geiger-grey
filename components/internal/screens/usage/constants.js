@@ -23,6 +23,7 @@ export const CHANNEL_LABELS = {
   playground: "Playground",
   widget: "Widget",
   api: "API",
+  mcp: "MCP",
 };
 
 export const CHANNEL_FILTER_OPTIONS = [
@@ -30,6 +31,7 @@ export const CHANNEL_FILTER_OPTIONS = [
   { value: "playground", label: "Playground" },
   { value: "widget", label: "Widget" },
   { value: "api", label: "API" },
+  { value: "mcp", label: "MCP" },
 ];
 
 // --- Usage event kinds (daily cost chart, breakdown table) -----------------

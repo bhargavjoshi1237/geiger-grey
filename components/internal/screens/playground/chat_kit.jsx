@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { FileText, Loader2, Send } from "lucide-react";
 
 import { Button } from "@geiger/ui/button";
-import { Badge } from "@geiger/ui/badge";
 import { Textarea } from "@geiger/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@geiger/ui/popover";
 import { LogoLoading } from "@geiger/ui";
@@ -20,13 +19,19 @@ import { formatDuration } from "@/lib/grey/format";
 
 // Shared "open this citation's source" handler — the live Chat thread and the
 // read-only Conversations transcript both hand off to the Sources tab the
-// same way, via useWorkspaceUrl's atomic openRecordInTab (setTab + openRecord
-// in two calls would lose the param).
+// same way, in one atomic setTab (setTab + openRecord in two calls would lose
+// the param). Timestamped citations (audio/video) also pass `t` in whole
+// seconds so the source sheet's player starts at the cited moment.
 export function useOpenSource() {
   const url = useWorkspaceUrl();
   return (citation) => {
     if (!citation?.sourceId) return;
-    url.openRecordInTab("Sources", "source", citation.sourceId);
+    const startMs = Number(citation.startMs);
+    const hasTime = citation.startMs !== null && citation.startMs !== undefined && Number.isFinite(startMs);
+    url.setTab("Sources", {
+      source: citation.sourceId,
+      t: hasTime ? Math.floor(startMs / 1000) : undefined,
+    });
   };
 }
 
@@ -93,8 +98,9 @@ export function CitationChip({ citation, onOpenSource }) {
 // controls on the live thread, a read-only summary on a transcript).
 export function MessageBubble({ message, actions, onOpenSource }) {
   const mine = message.role === "user";
-  const placeholder = Boolean(message.metadata?.placeholder);
   const pending = Boolean(message.pending);
+  // A streaming assistant reply before its first token arrives.
+  const thinking = pending && !mine && !message.content;
 
   return (
     <div className={cn("flex gap-2.5", mine ? "flex-row-reverse" : "flex-row")}>
@@ -103,14 +109,17 @@ export function MessageBubble({ message, actions, onOpenSource }) {
           className={cn(
             "rounded-2xl px-3.5 py-2 text-sm",
             mine ? "bg-primary text-primary-foreground" : "bg-surface-card text-foreground",
-            pending && "opacity-70",
+            pending && mine && "opacity-70",
           )}
         >
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          {thinking ? (
+            <Loader2 className="my-0.5 h-4 w-4 animate-spin text-text-tertiary" aria-label="Generating a reply" />
+          ) : (
+            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          )}
         </div>
 
         <div className={cn("mt-1 flex items-center gap-2 text-[10px] text-text-tertiary", mine && "flex-row-reverse")}>
-          {placeholder ? <Badge variant="warning">Placeholder</Badge> : null}
           {message.createdAt ? <span>{clockTime(message.createdAt)}</span> : null}
         </div>
 
@@ -133,9 +142,11 @@ export function MessageBubble({ message, actions, onOpenSource }) {
 // replaces the list entirely while there is nothing to show yet.
 export function MessageList({ messages = [], renderActions, emptyState, onOpenSource, loading }) {
   const endRef = useRef(null);
+  // Also follows a streaming reply as it grows.
+  const lastLength = messages.at(-1)?.content?.length ?? 0;
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [messages.length]);
+  }, [messages.length, lastLength]);
 
   if (loading) {
     return (

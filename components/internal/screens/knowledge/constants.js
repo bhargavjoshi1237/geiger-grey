@@ -1,18 +1,38 @@
 // Lookups, option lists, and default config for the Knowledge Bases + Ingestion
 // Presets screens. Config only — no row data (that lives in lib/supabase/*).
 
-// --- Embedding models (immutable on a knowledge base once it is created) ----
+import {
+  LEGACY_EMBEDDING_MODELS,
+  SUGGESTED_EMBEDDING_MODELS,
+  embeddingModelLabel,
+} from "@/lib/grey/embedding_models";
 
-export const EMBEDDING_MODELS = [
-  { value: "cohere-embed-5-pro", label: "Cohere Embed v5 Pro", dims: 1024 },
-  { value: "cohere-embed-5-fast", label: "Cohere Embed v5 Fast", dims: 384 },
-  { value: "openai-text-embedding-3-large", label: "OpenAI text-embedding-3-large", dims: 3072 },
-  { value: "voyage-3.5", label: "Voyage 3.5", dims: 1024 },
-];
+// --- Embedding models (immutable on a knowledge base once it is created) ----
+// The KB stores the provider's raw model id; dimensions come from Detect, so no
+// dims are listed here. Older KBs may hold a legacy Grey key (see embedding_models.js).
 
 export const EMBEDDING_MODEL_LABEL = Object.fromEntries(
-  EMBEDDING_MODELS.map((m) => [m.value, m.label]),
+  [
+    ...Object.values(SUGGESTED_EMBEDDING_MODELS).flat().map((m) => m.id),
+    ...Object.keys(LEGACY_EMBEDDING_MODELS),
+  ].map((id) => [id, embeddingModelLabel(id)]),
 );
+
+// Messages for /api/embeddings/detect error codes (apiFetch surfaces only the code).
+export const EMBEDDING_ERROR_MESSAGES = {
+  provider_auth: "The provider rejected the API key — update it in Model Providers.",
+  model_not_found: "This provider doesn't serve that model id.",
+  bad_request: "The provider rejected the request — check the model id.",
+  rate_limited: "The provider is rate limiting requests — try again shortly.",
+  provider_unavailable: "The provider is unavailable right now — try again shortly.",
+  timeout: "The provider took too long to respond.",
+  no_key: "Add an API key for this connection in Model Providers.",
+  capability_missing: "This connection can't create embeddings for that model.",
+  provider_not_found: "That connection no longer exists.",
+  unsafe_base_url: "This connection's base URL can't be used.",
+  unsupported_dims: "This model's vectors are outside the supported 64–4000 dimensions.",
+  forbidden: "You don't have permission to manage knowledge bases.",
+};
 
 // --- Status maps (StatusPill styling) ----------------------------------------
 

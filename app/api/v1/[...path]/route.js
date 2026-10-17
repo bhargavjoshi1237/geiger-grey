@@ -1,12 +1,15 @@
-import { json } from "@/lib/server/errors";
+import { openAIErrorBody } from "@/lib/grey/openai_frames";
 
 export const runtime = "nodejs";
 
-const notImplemented = () =>
-  json({ error: "not_implemented", message: "Grey serving endpoints arrive with the retrieval backend." }, 501);
+// Anything under /api/v1 without its own route answers like OpenAI does for an unknown URL.
+function notFound(request) {
+  const path = request.nextUrl?.pathname ?? new URL(request.url).pathname;
+  return Response.json(openAIErrorBody(404, "not_found", `Invalid URL (${request.method} ${path})`), { status: 404 });
+}
 
-export const GET = notImplemented;
-export const POST = notImplemented;
-export const PUT = notImplemented;
-export const PATCH = notImplemented;
-export const DELETE = notImplemented;
+export const GET = notFound;
+export const POST = notFound;
+export const PUT = notFound;
+export const PATCH = notFound;
+export const DELETE = notFound;

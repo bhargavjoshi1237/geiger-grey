@@ -149,6 +149,31 @@ export function sourceRef(id) {
   return id ? String(id).replace(/-/g, "").slice(0, 8).toUpperCase() : "—";
 }
 
+// A knowledge base's `chunk_config` holds its saved ingestion settings on top of
+// its preset. The config shape is one level deep (chunking, enrichment, media,
+// graph, prices are flat objects), so a per-section merge is a full merge — the
+// same merge "Re-ingest all" applies.
+export function mergePresetConfig(base, overrides) {
+  const merged = { ...(base || {}) };
+  for (const [key, value] of Object.entries(overrides || {})) {
+    if (value == null) continue;
+    merged[key] =
+      typeof value === "object" && !Array.isArray(value) && typeof merged[key] === "object" && merged[key] !== null
+        ? { ...merged[key], ...value }
+        : value;
+  }
+  return merged;
+}
+
+// The preset as it applies to a knowledge base: the KB's saved settings are
+// merged in when the preset is the KB's own (or the KB has none); picking a
+// different preset uses that preset as-is.
+export function effectivePreset(preset, kb) {
+  if (!preset) return null;
+  if (!kb || (kb.presetId && kb.presetId !== preset.id)) return preset;
+  return { ...preset, config: mergePresetConfig(preset.config, kb.chunkConfig) };
+}
+
 // A job's `preset_snapshot` keeps the tier and name alongside the config so
 // the Ingestion Jobs table can show "preset tier" without re-joining
 // ingestion_presets (the preset may since have been edited or deleted).

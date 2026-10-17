@@ -13,15 +13,22 @@
     "db:new": "geiger-orm create",
     "db:seed": "geiger-orm seed",
     "ui:update": "npm update @geiger/ui",
-    "test": "node --test \"lib/**/*.test.js\" \"*.test.js\""
+    "worker": "node --env-file=.env worker/index.mjs",
+    "test": "node --test \"lib/**/*.test.js\" \"lib/engine/**/*.test.js\" \"worker/**/*.test.mjs\" \"*.test.js\""
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.82",
+    "@ai-sdk/google": "4.0.99",
+    "@ai-sdk/openai": "4.0.96",
+    "@ai-sdk/openai-compatible": "3.0.71",
     "@geiger/notify": "file:../geiger-notify",
     "@geiger/orm": "github:bhargavjoshi1237/geiger-orm#master",
     "@geiger/rbac": "github:bhargavjoshi1237/geiger-rbac#1835de3735cf9c86df5adebdbc7458dd4302e40d",
-    "@geiger/ui": "github:bhargavjoshi1237/geiger-ui#00cac4f5bc540cd910478abb0f240358cc653f08",
+    "@geiger/ui": "github:bhargavjoshi1237/geiger-ui#258dd6aa93dbf55262eb37055fcc5ef61da24a5b",
+    "@modelcontextprotocol/server": "2.3.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.98.0",
+    "ai": "7.0.143",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -41,7 +48,8 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "three": "^0.184.0",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

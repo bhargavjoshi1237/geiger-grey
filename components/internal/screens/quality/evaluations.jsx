@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { FlaskConical, Info, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { FlaskConical, Pencil, Play, Plus, Trash2 } from "lucide-react";
 
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
 import {
@@ -19,6 +19,7 @@ import { ListPagination, usePagination } from "@/components/internal/shared/pagi
 import FilterDropdown from "@/components/internal/shared/filter_dropdown";
 import { LoadingArea } from "@geiger/ui";
 import { Button } from "@geiger/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@geiger/ui/tooltip";
 import { ActionMenu } from "@geiger/ui/action-menu";
 import { Input } from "@geiger/ui/input";
 import { Textarea } from "@geiger/ui/textarea";
@@ -216,7 +217,7 @@ export function EvaluationsScreen() {
     };
     const optimistic = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), metrics: null, ...input };
     setRuns((prev) => [optimistic, ...prev]);
-    toast.success("Evaluation queued — it runs once the backend is connected.");
+    toast.success("Evaluation queued — scores appear here when it finishes.");
     // createEvalRun resolves to the row or null — there is no separate "false" failure case.
     createEvalRun(projectId, input).then((saved) => {
       if (!saved) {
@@ -294,7 +295,22 @@ export function EvaluationsScreen() {
         </span>
       ),
     },
-    { key: "status", header: "Status", render: (r) => <StatusPill status={r.status} map={EVAL_RUN_STATUS_MAP} /> },
+    {
+      key: "status",
+      header: "Status",
+      // A failed run carries its reason in metadata.error (set by the worker) — surface it on hover.
+      render: (r) =>
+        r.status === "failed" && r.metadata?.error ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex cursor-help"><StatusPill status={r.status} map={EVAL_RUN_STATUS_MAP} /></span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{String(r.metadata.error)}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <StatusPill status={r.status} map={EVAL_RUN_STATUS_MAP} />
+        ),
+    },
     { key: "faithfulness", header: "Faithfulness", align: "right", className: "text-right", render: (r) => <span className="text-xs tabular-nums">{formatMetric(r.metrics?.faithfulness)}</span> },
     { key: "relevance", header: "Relevance", align: "right", className: "text-right", render: (r) => <span className="text-xs tabular-nums">{formatMetric(r.metrics?.answerRelevance)}</span> },
     { key: "precision", header: "Precision", align: "right", className: "text-right", render: (r) => <span className="text-xs tabular-nums">{formatMetric(r.metrics?.contextPrecision)}</span> },
@@ -340,13 +356,6 @@ export function EvaluationsScreen() {
           placeholder={tab === "sets" ? "Search sets…" : "Search set or pipeline…"}
         />
       </div>
-
-      {tab === "runs" ? (
-        <div className="flex items-start gap-2 rounded-xl border border-border bg-surface-subtle px-4 py-3 text-sm text-text-secondary">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-text-tertiary" />
-          Runs execute when the backend is connected — new runs stay queued until then.
-        </div>
-      ) : null}
 
       {tab === "runs" ? (
         <Toolbar>
@@ -555,8 +564,9 @@ function RunEvaluationDialog({ open, onOpenChange, sets, pipelines, onCreate }) 
         <DialogHeader>
           <DialogTitle>Run evaluation</DialogTitle>
           <DialogDescription>
-            Queues a run against the pipeline&apos;s current published version. Runs execute when
-            the backend is connected.
+            Queues a run against the pipeline&apos;s current published version (or its draft if it
+            isn&apos;t published yet). Answers are scored by the processing model set in Settings →
+            General.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">

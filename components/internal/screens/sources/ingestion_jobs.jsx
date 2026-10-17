@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Ban, Info, ListChecks, RotateCw } from "lucide-react";
+import { Ban, ListChecks, RotateCw } from "lucide-react";
 
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
 import {
@@ -10,7 +10,6 @@ import {
   EmptyState,
   LoadingArea,
   ScreenHeader,
-  SectionCard,
   StatsBar,
   StatusPill,
   Toolbar,
@@ -22,7 +21,7 @@ import { Progress } from "@geiger/ui/progress";
 import { useProject } from "@/context/project-context";
 import { useCan } from "@/context/rbac-context";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
-import { listSources } from "@/lib/supabase/sources";
+import { listSources, updateSource } from "@/lib/supabase/sources";
 import { listJobs, createJobs, updateJob } from "@/lib/supabase/ingestion_jobs";
 import { formatCurrency, formatRelative } from "@/lib/grey/format";
 import {
@@ -31,6 +30,7 @@ import {
   JOB_STATUS_MAP,
 } from "./constants";
 
+const CANCELLABLE = new Set(["queued", "running"]);
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -137,8 +137,11 @@ export function IngestionJobsScreen() {
     }
   };
 
+  // A running job is stopped by the worker at its next heartbeat or stage boundary, and the worker
+  // settles the source's status. A queued job never reaches the worker, so settle its source here:
+  // back to "ready" if it still has live chunks from an earlier run, else "pending".
   const handleCancel = async (job) => {
-    if (job.status !== "queued") return;
+    if (!CANCELLABLE.has(job.status)) return;
     const previousStatus = job.status;
     setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: "cancelled" } : j)));
     toast.success("Job cancelled.");
@@ -146,6 +149,13 @@ export function IngestionJobsScreen() {
     if (!updated) {
       toast.error("Couldn't cancel the job on the server.");
       setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: previousStatus } : j)));
+      return;
+    }
+    const source = sourcesById[job.sourceId];
+    if (previousStatus === "queued" && source?.status === "queued") {
+      const settled = (source.chunkCount ?? 0) > 0 ? "ready" : "pending";
+      const updatedSource = await updateSource(source.id, { status: settled });
+      if (updatedSource) setSources((prev) => prev.map((s) => (s.id === source.id ? { ...s, status: settled } : s)));
     }
   };
 
@@ -232,7 +242,7 @@ export function IngestionJobsScreen() {
               onSelect: () => handleRetry(j),
             },
             canRun &&
-              j.status === "queued" && {
+              CANCELLABLE.has(j.status) && {
                 icon: Ban,
                 label: "Cancel",
                 destructive: true,
@@ -252,13 +262,6 @@ export function IngestionJobsScreen() {
       />
 
       <StatsBar stats={stats} />
-
-      <SectionCard bare className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle px-4 py-3">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
-        <p className="text-sm text-text-secondary">
-          Processing backend not connected — jobs stay queued.
-        </p>
-      </SectionCard>
 
       <Toolbar>
         <div className="flex flex-wrap items-center gap-2">

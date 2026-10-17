@@ -1,0 +1,26 @@
+# Build context for Dockerfile.worker (only worker/, lib/grey/, lib/engine/ are copied).
+**/node_modules
+.git
+.next
+.env
+.env.*
+**/*.pem
+**/npm-debug.log*
+
+# tests and fixtures stay out of the image
+worker/test
+**/*.test.js
+**/*.test.mjs
+lib/grey/fixtures
+
+# app-only folders
+app
+components
+context
+public
+docs
+reports
+research_notes
+supabase
+.claude
+.superpowers

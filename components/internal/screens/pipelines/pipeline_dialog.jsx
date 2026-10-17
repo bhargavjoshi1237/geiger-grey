@@ -22,25 +22,30 @@ import {
   SelectValue,
 } from "@geiger/ui/select";
 import { Field } from "@/components/internal/shared/screen_kit";
-import { GREY_HOSTED_PROVIDER } from "@/lib/supabase/model_providers";
+import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
+import { hasCapability } from "@/lib/grey/provider_kinds";
+import { GREY_HOSTED_ENABLED, GREY_HOSTED_PROVIDER } from "@/lib/supabase/model_providers";
 import { DEFAULT_RETRIEVAL } from "./constants";
 
+// No provider preselected: the user picks one of their own chat connections.
 const emptyDraft = () => ({
   name: "",
   description: "",
-  providerId: GREY_HOSTED_PROVIDER.id,
-  model: GREY_HOSTED_PROVIDER.models[0],
+  providerId: "",
+  model: "",
 });
 
 // New pipeline dialog — only the essentials. Retrieval, prompt, and publishing
 // are tuned afterwards from the pipeline's own EditorShell.
 export function PipelineDialog({ open, onOpenChange, providers = [], onCreate }) {
+  const { setTab } = useWorkspaceUrl();
   const [draft, setDraft] = useState(emptyDraft());
 
   const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
 
-  const options = [GREY_HOSTED_PROVIDER, ...providers];
-  const selected = options.find((p) => p.id === draft.providerId) || options[0];
+  const chatProviders = providers.filter((p) => hasCapability(p, "chat"));
+  const options = GREY_HOSTED_ENABLED ? [GREY_HOSTED_PROVIDER, ...chatProviders] : chatProviders;
+  const selected = options.find((p) => p.id === draft.providerId) || null;
 
   const pickProvider = (value) => {
     const next = options.find((p) => p.id === value);
@@ -108,9 +113,9 @@ export function PipelineDialog({ open, onOpenChange, providers = [], onCreate })
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Provider">
-              <Select value={draft.providerId} onValueChange={pickProvider}>
+              <Select value={draft.providerId} onValueChange={pickProvider} disabled={!options.length}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
                   {options.map((p) => (
@@ -136,6 +141,26 @@ export function PipelineDialog({ open, onOpenChange, providers = [], onCreate })
               </Select>
             </Field>
           </div>
+          {!options.length ? (
+            <p className="-mt-2 text-xs text-text-secondary">
+              No chat-capable provider yet.{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenChange(false);
+                  setTab("Model Providers");
+                }}
+                className="font-medium text-text-secondary underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Connect one in Model Providers
+              </button>{" "}
+              — you can also choose it later in the pipeline&apos;s settings.
+            </p>
+          ) : selected && !selected.models?.length ? (
+            <p className="-mt-2 text-xs text-text-secondary">
+              &quot;{selected.name}&quot; has no model ids yet — add one in Model Providers.
+            </p>
+          ) : null}
         </div>
 
         <DialogFooter>

@@ -31,7 +31,7 @@ import { useCan } from "@/context/rbac-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { formatRelative } from "@/lib/grey/format";
 import { createPipeline, deletePipeline, listPipelines } from "@/lib/supabase/pipelines";
-import { GREY_HOSTED_PROVIDER, listProviders } from "@/lib/supabase/model_providers";
+import { GREY_HOSTED_ENABLED, GREY_HOSTED_PROVIDER, listProviders } from "@/lib/supabase/model_providers";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
 import { PIPELINE_STATUS_MAP } from "./constants";
 import { PipelineDialog } from "./pipeline_dialog";
@@ -72,7 +72,7 @@ export function AllPipelinesScreen() {
   }, [projectId]);
 
   const providerById = useMemo(() => {
-    const all = [GREY_HOSTED_PROVIDER, ...providers];
+    const all = GREY_HOSTED_ENABLED ? [GREY_HOSTED_PROVIDER, ...providers] : providers;
     return Object.fromEntries(all.map((p) => [p.id, p]));
   }, [providers]);
   const kbById = useMemo(() => Object.fromEntries(knowledgeBases.map((k) => [k.id, k])), [knowledgeBases]);

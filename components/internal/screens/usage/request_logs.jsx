@@ -27,8 +27,21 @@ import { useProject } from "@/context/project-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { listRequestLogs } from "@/lib/supabase/usage";
 import { listPipelines } from "@/lib/supabase/pipelines";
+import { listSources } from "@/lib/supabase/sources";
 import { formatCurrency, formatNumber } from "@/lib/grey/format";
 import { CHANNEL_FILTER_OPTIONS, CHANNEL_LABELS, REQUEST_STATUS_FILTER_OPTIONS, REQUEST_STATUS_MAP } from "./constants";
+
+const VIA_LABELS = { vector: "Vector", text: "Text", hybrid: "Hybrid", graph: "Graph" };
+
+// Retrieval arm(s) that surfaced a chunk; fused results join their arms ("vector+text").
+function viaLabel(via) {
+  if (!via) return null;
+  return via.includes("+") ? VIA_LABELS.hybrid : VIA_LABELS[via] || via;
+}
+
+function formatScore(score) {
+  return typeof score === "number" && Number.isFinite(score) ? score.toFixed(3) : "—";
+}
 
 export function RequestLogsScreen() {
   const { projectId } = useProject();
@@ -37,6 +50,7 @@ export function RequestLogsScreen() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState([]);
   const [pipelines, setPipelines] = useState([]);
+  const [sources, setSources] = useState([]);
   const [channelFilter, setChannelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [pipelineFilter, setPipelineFilter] = useState("all");
@@ -44,11 +58,12 @@ export function RequestLogsScreen() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([listRequestLogs(projectId), listPipelines(projectId)]).then(
-      ([logRows, pipelineRows]) => {
+    Promise.all([listRequestLogs(projectId), listPipelines(projectId), listSources(projectId)]).then(
+      ([logRows, pipelineRows, sourceRows]) => {
         if (!alive) return;
         setLogs(logRows ?? []);
         setPipelines(pipelineRows ?? []);
+        setSources(sourceRows ?? []);
         setLoading(false);
       },
     );
@@ -62,6 +77,13 @@ export function RequestLogsScreen() {
     pipelines.forEach((p) => (map[p.id] = p));
     return map;
   }, [pipelines]);
+
+  // request_logs.retrieved keeps ids only (never chunk content), so names come from the live sources.
+  const sourceNameById = useMemo(() => {
+    const map = {};
+    sources.forEach((s) => (map[s.id] = s.name || "Untitled source"));
+    return map;
+  }, [sources]);
 
   const filtered = useMemo(() => {
     return logs.filter((l) => {
@@ -263,20 +285,25 @@ export function RequestLogsScreen() {
                 </p>
                 {Array.isArray(openLog.retrieved) && openLog.retrieved.length ? (
                   <ul className="space-y-2">
-                    {openLog.retrieved.map((chunk, i) => (
+                    {openLog.retrieved.map((entry, i) => (
                       <li
-                        key={chunk.chunkId || i}
-                        className="rounded-lg border border-border bg-surface-card p-3"
+                        key={entry.chunkId || i}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-card p-3"
                       >
-                        <p className="text-xs font-medium text-foreground">
-                          {chunk.title || "Untitled source"}
-                          {chunk.page ? ` · p.${chunk.page}` : ""}
+                        <p className="min-w-0 truncate text-xs font-medium text-foreground">
+                          <span className="tabular-nums text-text-tertiary">#{entry.rank ?? i + 1}</span>{" "}
+                          {sourceNameById[entry.sourceId] || "Deleted source"}
                         </p>
-                        {chunk.snippet ? (
-                          <p className="mt-1 line-clamp-3 text-xs text-text-secondary">
-                            {chunk.snippet}
-                          </p>
-                        ) : null}
+                        <div className="flex shrink-0 items-center gap-2">
+                          {viaLabel(entry.via) ? (
+                            <Badge variant="neutral" title={entry.via}>
+                              {viaLabel(entry.via)}
+                            </Badge>
+                          ) : null}
+                          <span className="text-xs tabular-nums text-text-secondary" title="Retrieval score">
+                            {formatScore(entry.score)}
+                          </span>
+                        </div>
                       </li>
                     ))}
                   </ul>

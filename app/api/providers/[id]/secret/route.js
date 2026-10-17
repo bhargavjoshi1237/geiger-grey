@@ -1,8 +1,11 @@
 import { handle, json, ApiError } from "@/lib/server/errors";
 import { authenticate, authorize, isUuid } from "@/lib/server/auth";
 import { adminClient } from "@/lib/supabase/admin";
+import { toCamel } from "@/lib/server/case";
+import { runProviderTest } from "@/lib/server/provider_test";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export const POST = handle(async (request, { params }) => {
   const { id } = await params;
@@ -31,11 +34,19 @@ export const POST = handle(async (request, { params }) => {
   const secret = typeof body?.secret === "string" ? body.secret.trim() : "";
   if (!secret) throw new ApiError("invalid_input", 422, "secret is required.");
 
-  const { error: rpcError } = await admin.rpc("set_provider_secret", { p_provider: id, p_secret: secret });
-  if (rpcError) {
-    console.error("[api.providers.secret.rpc]", rpcError);
+  const { data: saved, error: rpcError } = await admin.rpc("set_provider_secret", { p_provider: id, p_secret: secret });
+  if (rpcError || !saved) {
+    console.error("[api.providers.secret.rpc]", rpcError?.code || "no_row");
     throw new ApiError("service_unavailable", 503, "Could not store the secret.");
   }
 
-  return json({ ok: true, keyLast4: secret.slice(-4) });
+  // Health check on save: the key is stored either way; a failed test only leaves it unverified.
+  const keyLast4 = secret.slice(-4);
+  try {
+    const tested = await runProviderTest({ admin, provider: saved });
+    return json({ ok: true, keyLast4, status: tested.status, provider: toCamel(tested) });
+  } catch (testError) {
+    console.error("[api.providers.secret.test]", testError?.code || "test_failed");
+    return json({ ok: true, keyLast4, status: saved.status, provider: toCamel(saved) });
+  }
 });
