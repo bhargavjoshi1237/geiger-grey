@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Grey — Geiger",
+  title: "Grey - Geiger Studio",
   description:
     "Knowledge bases, graphs and RAG pipelines for your Geiger projects.",
 };
