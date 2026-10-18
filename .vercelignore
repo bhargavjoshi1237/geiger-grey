@@ -1,0 +1,5 @@
+# The Vercel CLI uploads everything not listed here (it doesn't read .gitignore).
+# Env values come from the project's Environment Variables, never from local files.
+.env
+.env.*
+/.superpowers/
