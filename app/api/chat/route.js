@@ -47,18 +47,46 @@ function partialAnswer(turn, text) {
   };
 }
 
+// What the turn sent the model (passages, sizes, token budget) plus the retrieval counts behind
+// it, for the Playground's context view. Undefined when no passage went in.
+function turnContext(turn) {
+  if (!turn?.context?.passages?.length) return undefined;
+  return {
+    ...turn.context,
+    retrieved: turn.retrieved?.length ?? turn.context.passages.length,
+    candidates: turn.retrievalMeta?.candidateCount ?? null,
+  };
+}
+
+// How long the query embedding (model, ms, tokens) and the model's generation (ms, firstTokenMs)
+// took, for the reply header. Embedding is known once retrieval is done, generation once it ends.
+function turnStats(turn, final) {
+  const meta = turn?.retrievalMeta;
+  const stats = {};
+  if (meta?.embedTokens && Number.isFinite(meta.timings?.embedMs)) {
+    stats.embedding = { model: meta.embedModels?.join(", ") || null, ms: meta.timings.embedMs, tokens: meta.embedTokens };
+  }
+  if (final?.generation) stats.generation = final.generation;
+  return Object.keys(stats).length ? stats : undefined;
+}
+
 async function saveAssistantMessage(ctx, turn, final, { aborted = false, errorCode = null } = {}) {
   const meta = turn?.retrievalMeta ?? {};
+  const context = turnContext(turn);
+  const stats = turnStats(turn, final);
   const metadata = {
     model: final.model?.id ?? null,
     provider: final.model?.provider ?? null,
     pipelineVersion: ctx.config.version,
     finishReason: final.finishReason ?? null,
     ...(final.noContext ? { noContext: true } : {}),
+    ...(ctx.config.knowledgeOnly === false ? { knowledgeOnly: false } : {}),
     ...(turn?.retrievalOnly ? { retrievalOnly: true } : {}),
     ...(aborted ? { aborted: true } : {}),
     ...(errorCode ? { error: errorCode } : {}),
     ...(meta.degraded ? { degraded: meta.degraded } : {}),
+    ...(context ? { context } : {}),
+    ...(stats ? { stats } : {}),
   };
   const { data, error } = await ctx.admin.from("messages").insert({
     project_id: ctx.projectId,
@@ -98,6 +126,7 @@ async function writeTurnLogs(ctx, outcome) {
   const { admin, projectId, pipelineId, conversationId, user, config } = ctx;
   const { status, turn, final, error, aborted } = outcome;
   const meta = turn?.retrievalMeta ?? {};
+  const context = turnContext(turn);
   const billed = status === "ok" && Boolean(turn?.retrieved);
   const tokensIn = final?.usage?.tokensIn ?? null;
   const tokensOut = final?.usage?.tokensOut ?? null;
@@ -119,7 +148,9 @@ async function writeTurnLogs(ctx, outcome) {
       pipelineVersion: config.version,
       model: final?.model?.id ?? null,
       provider: final?.model?.provider ?? null,
+      finishReason: final?.finishReason ?? null,
       noContext: Boolean(final?.noContext),
+      knowledgeOnly: config.knowledgeOnly !== false,
       retrievalOnly: Boolean(turn?.retrievalOnly),
       aborted: Boolean(aborted),
       ...(error ? { errorCode: error.code } : {}),
@@ -128,7 +159,12 @@ async function writeTurnLogs(ctx, outcome) {
       rerank: meta.rerank ?? null,
       graph: meta.graph ?? null,
       candidateCount: meta.candidateCount ?? 0,
-      timings: { ...(meta.timings ?? {}), ...(turn?.timings ?? {}) },
+      context: context ? { passages: context.passages.length, tokens: context.tokens } : null,
+      timings: {
+        ...(meta.timings ?? {}),
+        ...(turn?.timings ?? {}),
+        ...(final?.generation ? { generationMs: final.generation.ms, firstTokenMs: final.generation.firstTokenMs } : {}),
+      },
     },
     createdBy: user.id,
   });
@@ -173,7 +209,9 @@ async function writeTurnLogs(ctx, outcome) {
   }
 }
 
-// NDJSON: {type:"start"} → {type:"delta"}… → {type:"done", assistantMessage} | {type:"error", code, message}.
+// NDJSON: {type:"start"} → {type:"retrieval", context?, stats?} → {type:"delta"}… → {type:"done", assistantMessage}
+// | {type:"error", code, message}. "retrieval" carries the passages sent to the model and the query
+// embedding's timing as soon as search is done.
 // The assistant message is saved before "done"; a client disconnect aborts generation and keeps
 // any partial reply (metadata.aborted).
 function streamTurn(request, ctx, history, settle) {
@@ -209,6 +247,7 @@ function streamTurn(request, ctx, history, settle) {
           stream: true,
           abortSignal: abort.signal,
         });
+        send({ type: "retrieval", context: turnContext(turn), stats: turnStats(turn) });
         for await (const text of turn.textStream) {
           partial += text;
           send({ type: "delta", text });

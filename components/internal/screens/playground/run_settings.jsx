@@ -1,162 +1,154 @@
 "use client";
 
 import React from "react";
-import { PanelRightClose, RotateCcw } from "lucide-react";
+import { ArrowUpRight, PanelRightClose, RotateCcw } from "lucide-react";
 
-import { Button } from "@geiger/ui/button";
 import { Badge } from "@geiger/ui/badge";
 import { Slider } from "@geiger/ui/slider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@geiger/ui/select";
-import { Field } from "@/components/internal/shared/screen_kit";
+import { cn } from "@/lib/utils";
+import { IconAction } from "./chat_kit";
 
-// Right-hand "Run settings" panel: pipeline picker (locked once a conversation
-// has started — the pipeline is fixed at creation), a read-only summary of
-// that pipeline's model/KBs/retrieval config, and per-session overrides
-// (temperature, topK) that only apply to this browser tab's requests.
-export function RunSettingsPanel({
-  pipelines = [],
-  pipelineId,
-  onPipelineChange,
-  pipeline,
-  knowledgeBaseNames = [],
-  locked = false,
-  overrides,
-  onOverridesChange,
-  onClose,
-}) {
+const STATUS = { live: { label: "Live", variant: "success" }, draft: { label: "Draft", variant: "neutral" } };
+
+function SectionLabel({ children, action }) {
+  return (
+    <div className="flex h-7 items-center justify-between">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-text-secondary">{children}</p>
+      {action}
+    </div>
+  );
+}
+
+function Row({ label, children }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-1.5 text-xs">
+      <span className="shrink-0 text-text-secondary">{label}</span>
+      <span className="min-w-0 text-right font-medium text-foreground">{children}</span>
+    </div>
+  );
+}
+
+function OverrideSlider({ label, value, display, min, max, step, onChange }) {
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-text-secondary">{label}</span>
+        <span className="font-medium tabular-nums text-foreground">{display}</span>
+      </div>
+      <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} />
+    </div>
+  );
+}
+
+// Right-hand panel: what the conversation's pipeline is configured to do, a link to edit it,
+// and per-session overrides (temperature, top K) that apply to this tab's requests only.
+export function RunSettingsPanel({ pipeline, knowledgeBaseNames = [], overrides, onOverridesChange, onOpenPipeline, onClose, className }) {
   const retrieval = pipeline?.retrieval || {};
-  const baseTemperature = pipeline?.temperature ?? 0.2;
-  const baseTopK = retrieval.topK ?? 5;
+  const baseTemperature = pipeline?.temperature ?? 0.3;
+  const baseTopK = retrieval.topK ?? 6;
   const temperature = overrides?.temperature ?? baseTemperature;
   const topK = overrides?.topK ?? baseTopK;
   const overridden = overrides?.temperature !== undefined || overrides?.topK !== undefined;
+  const status = STATUS[pipeline?.status] || STATUS.draft;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-surface-subtle">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+    <div className={cn("flex h-full min-h-0 w-full flex-col", className)}>
+      <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
         <p className="text-sm font-semibold text-foreground">Run settings</p>
         {onClose ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Close run settings"
-            onClick={onClose}
-            className="text-muted-foreground hover:bg-surface-active hover:text-foreground"
-          >
-            <PanelRightClose className="h-4 w-4" />
-          </Button>
+          <IconAction label="Close run settings" onClick={onClose} className="h-8 w-8 [&_svg]:h-4 [&_svg]:w-4">
+            <PanelRightClose />
+          </IconAction>
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
-        <Field label="Pipeline">
-          <Select value={pipelineId || undefined} onValueChange={onPipelineChange} disabled={locked}>
-            <SelectTrigger>
-              <SelectValue placeholder="Choose a pipeline" />
-            </SelectTrigger>
-            <SelectContent>
-              {pipelines.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {locked ? (
-            <p className="mt-1 text-[11px] text-text-tertiary">
-              Fixed for this conversation — start a new chat to change it.
-            </p>
-          ) : null}
-        </Field>
-
-        {pipeline ? (
-          <div className="space-y-3 rounded-lg border border-border bg-surface-card p-3 text-xs">
+      {pipeline ? (
+        <div className="scrollbar-subtle min-h-0 flex-1 divide-y divide-border overflow-y-auto">
+          <section className="space-y-3 px-4 py-4">
+            <SectionLabel>Pipeline</SectionLabel>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-text-secondary">Model</span>
-              <span className="truncate font-medium text-foreground">{pipeline.model || "—"}</span>
+              <p className="truncate text-sm font-medium text-foreground">{pipeline.name}</p>
+              <Badge variant={status.variant}>{status.label}</Badge>
             </div>
-            <div>
-              <p className="mb-1 text-text-secondary">Knowledge bases</p>
-              <div className="flex flex-wrap gap-1">
-                {knowledgeBaseNames.length ? (
-                  knowledgeBaseNames.map((name) => (
-                    <Badge key={name} variant="neutral">
-                      {name}
-                    </Badge>
-                  ))
-                ) : (
-                  <span className="text-text-tertiary">None selected</span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-text-secondary">Top K</span>
-              <span className="font-medium text-foreground">{baseTopK}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-text-secondary">Graph mode</span>
-              <span className="font-medium capitalize text-foreground">
-                {retrieval.graphMode || "off"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-text-secondary">Citations</span>
-              <span className="font-medium text-foreground">
-                {retrieval.citations === false ? "Off" : "On"}
-              </span>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="space-y-4 border-t border-border pt-4">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-text-secondary">
-              Session overrides
-            </p>
-            {overridden ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Reset overrides"
-                onClick={() => onOverridesChange?.({})}
-                className="text-muted-foreground hover:bg-surface-active hover:text-foreground"
+            {onOpenPipeline ? (
+              <button
+                type="button"
+                onClick={onOpenPipeline}
+                className="inline-flex items-center gap-1 text-xs font-medium text-text-secondary transition-colors hover:text-foreground"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </Button>
+                Edit pipeline <ArrowUpRight className="h-3.5 w-3.5" />
+              </button>
             ) : null}
-          </div>
+          </section>
 
-          <Field label={`Temperature — ${temperature.toFixed(1)}`}>
-            <Slider
-              value={[temperature]}
+          <section className="px-4 py-4">
+            <SectionLabel>Configuration</SectionLabel>
+            <div className="mt-1">
+              <Row label="Model">{pipeline.model || "—"}</Row>
+              <Row label="Knowledge bases">
+                {knowledgeBaseNames.length ? (
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {knowledgeBaseNames.map((name) => (
+                      <Badge key={name} variant="neutral">
+                        {name}
+                      </Badge>
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-amber-400">None attached</span>
+                )}
+              </Row>
+              <Row label="Search">
+                {retrieval.hybrid === false ? "Vector" : "Hybrid"} · top {baseTopK}
+              </Row>
+              <Row label="Min. similarity">{retrieval.threshold ?? 0.2}</Row>
+              <Row label="Rerank">{retrieval.rerank ? "On" : "Off"}</Row>
+              <Row label="Graph">
+                <span className="capitalize">{retrieval.graphMode || "off"}</span>
+              </Row>
+              <Row label="Citations">{retrieval.citations === false ? "Off" : "On"}</Row>
+              <Row label="Max tokens">{pipeline.maxTokens ? pipeline.maxTokens.toLocaleString("en-US") : "Provider default"}</Row>
+            </div>
+          </section>
+
+          <section className="space-y-4 px-4 py-4">
+            <SectionLabel
+              action={
+                overridden ? (
+                  <IconAction label="Reset overrides" onClick={() => onOverridesChange?.({})}>
+                    <RotateCcw />
+                  </IconAction>
+                ) : null
+              }
+            >
+              Session overrides
+            </SectionLabel>
+            <OverrideSlider
+              label="Temperature"
+              value={temperature}
+              display={temperature.toFixed(1)}
               min={0}
               max={2}
               step={0.1}
-              onValueChange={([v]) => onOverridesChange?.({ ...overrides, temperature: v })}
+              onChange={(v) => onOverridesChange?.({ ...overrides, temperature: v })}
             />
-          </Field>
-
-          <Field label={`Top K — ${topK}`}>
-            <Slider
-              value={[topK]}
+            <OverrideSlider
+              label="Passages (top K)"
+              value={topK}
+              display={topK}
               min={1}
               max={20}
               step={1}
-              onValueChange={([v]) => onOverridesChange?.({ ...overrides, topK: v })}
+              onChange={(v) => onOverridesChange?.({ ...overrides, topK: v })}
             />
-          </Field>
-
-          <p className="text-[11px] text-text-tertiary">
-            Overrides apply to this session only — they are not saved to the pipeline.
-          </p>
+            <p className="text-[11px] leading-4 text-text-tertiary">
+              Overrides apply to this tab only and are never saved to the pipeline.
+            </p>
+          </section>
         </div>
-      </div>
+      ) : (
+        <p className="px-4 py-6 text-xs text-text-tertiary">Choose a pipeline to see its settings.</p>
+      )}
     </div>
   );
 }

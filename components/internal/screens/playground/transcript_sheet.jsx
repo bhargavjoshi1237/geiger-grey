@@ -94,14 +94,15 @@ export function TranscriptSheet({ conversation, pipelineName, userLabel, onClose
               </SheetDescription>
             </SheetHeader>
 
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {loading ? (
                 <LoadingArea label="Loading transcript" />
               ) : (
                 <MessageList
                   messages={messages}
                   onOpenSource={openSource}
-                  renderActions={(m) => <FeedbackSummary message={m} />}
+                  assistantLabel={pipelineName}
+                  renderActions={(m) => (m.role === "assistant" ? <FeedbackSummary message={m} /> : null)}
                   emptyState={<p className="text-sm text-text-secondary">No messages in this conversation.</p>}
                 />
               )}

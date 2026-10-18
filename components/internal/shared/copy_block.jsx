@@ -1,40 +1,16 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React from "react";
 import { Check, Copy } from "lucide-react";
-import { toast } from "sonner";
 
 import { Button } from "@geiger/ui/button";
 import { cn } from "@/lib/utils";
+import { useCopy } from "@/lib/hooks/use-copy";
 
 // Read-only mono value or snippet with a copy button. Used for API keys,
 // endpoint URLs, embed snippets and other copy-to-clipboard values.
 export function CopyBlock({ value, label, multiline = false, className }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimer = useRef(null);
-
-  useEffect(
-    () => () => {
-      if (resetTimer.current) clearTimeout(resetTimer.current);
-    },
-    [],
-  );
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value ?? "");
-      setCopied(true);
-      toast.success("Copied");
-      if (resetTimer.current) clearTimeout(resetTimer.current);
-      resetTimer.current = setTimeout(() => {
-        resetTimer.current = null;
-        setCopied(false);
-      }, 1500);
-    } catch (error) {
-      console.error("[copy_block.copy]", error);
-      toast.error("Couldn't copy");
-    }
-  };
+  const { copied, copy } = useCopy();
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
@@ -55,7 +31,7 @@ export function CopyBlock({ value, label, multiline = false, className }) {
           variant="ghost"
           size="icon-sm"
           aria-label="Copy"
-          onClick={copy}
+          onClick={() => copy(value)}
           className="shrink-0 text-muted-foreground hover:bg-surface-active hover:text-foreground"
         >
           {copied ? (

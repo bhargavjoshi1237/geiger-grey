@@ -28,7 +28,7 @@ import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { listRequestLogs } from "@/lib/supabase/usage";
 import { listPipelines } from "@/lib/supabase/pipelines";
 import { listSources } from "@/lib/supabase/sources";
-import { formatCurrency, formatNumber } from "@/lib/grey/format";
+import { formatCurrency, formatNumber, formatScore } from "@/lib/grey/format";
 import { CHANNEL_FILTER_OPTIONS, CHANNEL_LABELS, REQUEST_STATUS_FILTER_OPTIONS, REQUEST_STATUS_MAP } from "./constants";
 
 const VIA_LABELS = { vector: "Vector", text: "Text", hybrid: "Hybrid", graph: "Graph" };
@@ -37,10 +37,6 @@ const VIA_LABELS = { vector: "Vector", text: "Text", hybrid: "Hybrid", graph: "G
 function viaLabel(via) {
   if (!via) return null;
   return via.includes("+") ? VIA_LABELS.hybrid : VIA_LABELS[via] || via;
-}
-
-function formatScore(score) {
-  return typeof score === "number" && Number.isFinite(score) ? score.toFixed(3) : "—";
 }
 
 export function RequestLogsScreen() {
