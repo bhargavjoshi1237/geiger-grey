@@ -1,379 +1,303 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  CheckCircle2,
-  Circle,
-  History,
-  ListChecks,
-  MessagesSquare,
-  Plus,
-  Upload,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Database, Workflow } from "lucide-react";
 
 import { MainScreenWrapper } from "@/components/internal/shared/screen_wrappers";
-import {
-  ScreenHeader,
-  StatGrid,
-  SectionCard,
-  EmptyState,
-  StatusPill,
-} from "@/components/internal/shared/screen_kit";
-import { Button } from "@geiger/ui/button";
-import { Badge } from "@geiger/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@geiger/ui/tooltip";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@geiger/ui/table";
-import { LoadingArea } from "@geiger/ui";
+import { RollingNumber, StatsBar } from "@/components/internal/shared/screen_kit";
+import { freshnessOf } from "@/components/internal/screens/sources/constants";
+import { cn } from "@/lib/utils";
 import { useProject } from "@/context/project-context";
-import { useCan } from "@/context/rbac-context";
-import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
 import { listSources } from "@/lib/supabase/sources";
-import { listEntities } from "@/lib/supabase/graph";
 import { listJobs } from "@/lib/supabase/ingestion_jobs";
-import { listConversations } from "@/lib/supabase/conversations";
+import { listConversations, listFeedbackMessages } from "@/lib/supabase/conversations";
 import { listPipelines } from "@/lib/supabase/pipelines";
 import { listProviders } from "@/lib/supabase/model_providers";
-import { listApiKeys } from "@/lib/supabase/api_keys";
-import { listUsageEvents } from "@/lib/supabase/usage";
-import { getProjectSettings } from "@/lib/supabase/project_settings";
-import { formatCurrency, formatRelative } from "@/lib/grey/format";
+import { listRequestLogStats, listUsageEvents } from "@/lib/supabase/usage";
+import { formatCurrency } from "@/lib/grey/format";
+import {
+  buildWeeklyBuckets,
+  filterByScope,
+  periodDelta,
+  periodWindows,
+  ratePct,
+  sumInWindow,
+} from "@/lib/grey/overview_metrics";
+import { ATTENTION_META, PERIOD_DAYS, TREND_WEEKS } from "./constants";
+import {
+  ActivityTrendWidget,
+  ChannelMixWidget,
+  GaugeWidget,
+  IngestionFunnelWidget,
+} from "./charts";
+import { TopPipelinesTable } from "./top_pipelines";
+import { AttentionCard } from "./attention_card";
 
-// Mirrors sources/constants JOB_STATUS_MAP (that module isn't owned by this
-// task yet, so this is a local copy rather than an import).
-const JOB_STATUS_MAP = {
-  queued: { label: "Queued", variant: "neutral", dotClass: "bg-[#737373]" },
-  running: { label: "Running", variant: "info", dotClass: "bg-sky-400" },
-  succeeded: { label: "Succeeded", variant: "success", dotClass: "bg-emerald-400" },
-  failed: { label: "Failed", variant: "danger", dotClass: "bg-red-400" },
-  cancelled: { label: "Cancelled", variant: "neutral", dotClass: "bg-[#737373]" },
-};
-
-const CHECKLIST = [
-  { key: "kb", label: "Create a knowledge base", tab: "All Knowledge Bases" },
-  { key: "sources", label: "Upload sources", tab: "Sources" },
-  { key: "pipeline", label: "Create a pipeline", tab: "All Pipelines" },
-  { key: "provider", label: "Add a model provider", tab: "Model Providers" },
-  { key: "apiKey", label: "Create an API key", tab: "API Keys" },
-];
-
-// A quick action that explains itself (via tooltip) instead of silently doing
-// nothing when this account can't perform it.
-function QuickAction({ canDo, onClick, icon: Icon, children, primary }) {
-  const button = (
-    <Button
-      variant={primary ? undefined : "outline"}
-      className={primary ? "bg-primary text-primary-foreground" : undefined}
-      disabled={!canDo}
-      onClick={onClick}
-    >
-      <Icon className="h-4 w-4" /> {children}
-    </Button>
-  );
-  if (canDo) return button;
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span>{button}</span>
-        </TooltipTrigger>
-        <TooltipContent>You don&apos;t have permission for this.</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
+const count = (n) => n.toLocaleString("en-US");
+const plural = (n, word) => `${count(n)} ${word}${n === 1 ? "" : "s"}`;
 
 export function OverviewScreen() {
   const { projectId } = useProject();
-  const { setTab, openRecordInTab } = useWorkspaceUrl();
-  const canCreateKb = useCan("grey.kb.manage");
-  const canUploadSources = useCan("grey.source.upload");
-  const canUsePlayground = useCan("grey.playground.view");
 
-  const [loading, setLoading] = useState(true);
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [sources, setSources] = useState([]);
-  const [entities, setEntities] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [conversations, setConversations] = useState([]);
   const [pipelines, setPipelines] = useState([]);
   const [providers, setProviders] = useState([]);
-  const [apiKeys, setApiKeys] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [usageEvents, setUsageEvents] = useState([]);
-  const [settings, setSettings] = useState(null);
+  const [feedback, setFeedback] = useState([]);
+  const [loading, setLoading] = useState(true);
+  // Every window on the page is measured from this instant, so figures stay
+  // consistent with each other between renders.
+  const [asOf, setAsOf] = useState(() => Date.now());
 
   useEffect(() => {
     let alive = true;
-    const now = new Date();
-    const sevenDaysAgo = new Date(now);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const since = new Date(Math.min(sevenDaysAgo.getTime(), startOfMonth.getTime()));
+    const now = Date.now();
+    const { prevStart } = periodWindows(now, PERIOD_DAYS);
+    const logsSince = Math.min(buildWeeklyBuckets(TREND_WEEKS, now)[0].getTime(), prevStart);
 
     Promise.all([
       listKnowledgeBases(projectId),
       listSources(projectId),
-      listEntities(projectId),
       listJobs(projectId),
-      listConversations(projectId),
       listPipelines(projectId),
       listProviders(projectId),
-      listApiKeys(projectId),
-      listUsageEvents(projectId, { since: since.toISOString() }),
-      getProjectSettings(projectId),
-    ]).then(
-      ([
-        kbRows,
-        sourceRows,
-        entityRows,
-        jobRows,
-        conversationRows,
-        pipelineRows,
-        providerRows,
-        apiKeyRows,
-        usageRows,
-        settingsRow,
-      ]) => {
-        if (!alive) return;
-        setKnowledgeBases(kbRows ?? []);
-        setSources(sourceRows ?? []);
-        setEntities(entityRows ?? []);
-        setJobs(jobRows ?? []);
-        setConversations(conversationRows ?? []);
-        setPipelines(pipelineRows ?? []);
-        setProviders(providerRows ?? []);
-        setApiKeys(apiKeyRows ?? []);
-        setUsageEvents(usageRows ?? []);
-        // null here means the settings read failed, not "no cap set" — the
-        // stat below shows "—" rather than guessing.
-        setSettings(settingsRow);
-        setLoading(false);
-      },
-    );
+      listConversations(projectId),
+      listRequestLogStats(projectId, { since: new Date(logsSince).toISOString() }),
+      listUsageEvents(projectId, { since: new Date(prevStart).toISOString() }),
+      listFeedbackMessages(projectId),
+    ]).then(([kb, src, job, pipe, prov, conv, log, usage, fb]) => {
+      if (!alive) return;
+      setKnowledgeBases(kb ?? []);
+      setSources(src ?? []);
+      setJobs(job ?? []);
+      setPipelines(pipe ?? []);
+      setProviders(prov ?? []);
+      setConversations(conv ?? []);
+      setLogs(log ?? []);
+      setUsageEvents(usage ?? []);
+      setFeedback(fb ?? []);
+      setAsOf(Date.now());
+      setLoading(false);
+    });
     return () => {
       alive = false;
     };
   }, [projectId]);
 
-  const kbById = useMemo(() => {
-    const map = {};
-    knowledgeBases.forEach((kb) => (map[kb.id] = kb));
-    return map;
-  }, [knowledgeBases]);
-
-  const sourceById = useMemo(() => {
-    const map = {};
-    sources.forEach((s) => (map[s.id] = s));
-    return map;
-  }, [sources]);
-
-  const pipelineById = useMemo(() => {
-    const map = {};
-    pipelines.forEach((p) => (map[p.id] = p));
-    return map;
-  }, [pipelines]);
+  const workspaceSummary = useMemo(() => {
+    const chunks = sources.reduce((sum, s) => sum + (s.chunkCount || 0), 0);
+    return [
+      { label: "Knowledge Bases", value: count(knowledgeBases.length) },
+      { label: "Sources", value: count(sources.length) },
+      { label: "Chunks", value: count(chunks) },
+    ];
+  }, [knowledgeBases, sources]);
 
   const stats = useMemo(() => {
-    const now = new Date();
-    const sevenDaysAgo = now.getTime() - 7 * 86400000;
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const queries7d = usageEvents.filter(
-      (e) => e.kind === "retrieval" && new Date(e.occurredAt).getTime() >= sevenDaysAgo,
-    ).length;
-    const spendMonth = usageEvents
-      .filter((e) => new Date(e.occurredAt).getTime() >= startOfMonth)
-      .reduce((sum, e) => sum + (Number(e.cost) || 0), 0);
-    const settingsError = settings === null;
-    const cap = settings?.monthlySoftCap ? Number(settings.monthlySoftCap) : null;
-
+    const { curStart, prevStart } = periodWindows(asOf, PERIOD_DAYS);
+    const one = () => 1;
+    const stat = (label, rows, dateKey, valueFn, format) => {
+      const current = sumInWindow(rows, dateKey, valueFn, curStart);
+      const previous = sumInWindow(rows, dateKey, valueFn, prevStart, curStart);
+      return {
+        label: `${label} · ${PERIOD_DAYS}d`,
+        value: format(current),
+        ...periodDelta(current, previous),
+        footer: "VS Last Period",
+      };
+    };
     return [
-      { label: "Knowledge bases", value: String(knowledgeBases.length) },
-      { label: "Sources", value: String(sources.length) },
-      { label: "Entities", value: String(entities.length) },
-      { label: "Queries · 7d", value: String(queries7d) },
-      {
-        label: "Spend (MTD)",
-        value: formatCurrency(spendMonth),
-        hint: settingsError ? "—" : cap ? `of ${formatCurrency(cap)} cap` : "No soft cap set",
-      },
+      stat("Queries", logs, "createdAt", one, count),
+      stat("Spend", usageEvents, "occurredAt", (e) => Number(e.cost) || 0, formatCurrency),
+      stat("Sources Added", sources, "createdAt", one, count),
+      stat("Conversations", conversations, "createdAt", one, count),
     ];
-  }, [knowledgeBases, sources, entities, usageEvents, settings]);
+  }, [asOf, logs, usageEvents, sources, conversations]);
 
-  const recentJobs = useMemo(() => jobs.slice(0, 5), [jobs]);
-  const recentConversations = useMemo(() => conversations.slice(0, 5), [conversations]);
-
-  const checklistState = useMemo(
-    () => ({
-      kb: knowledgeBases.length > 0,
-      sources: sources.length > 0,
-      pipeline: pipelines.length > 0,
-      provider: providers.length > 0,
-      apiKey: apiKeys.length > 0,
-    }),
-    [knowledgeBases, sources, pipelines, providers, apiKeys],
+  const funnelStages = useMemo(
+    () => [
+      { key: "added", label: "Sources added", short: "Added", value: sources.length },
+      {
+        key: "processed",
+        label: "Processed",
+        short: "Processed",
+        value: sources.filter((s) => s.status === "ready").length,
+      },
+      {
+        key: "indexed",
+        label: "Indexed into chunks",
+        short: "Indexed",
+        value: sources.filter((s) => (s.chunkCount || 0) > 0).length,
+      },
+      {
+        key: "verified",
+        label: "Verified fresh",
+        short: "Verified",
+        value: sources.filter((s) => freshnessOf(s) === "verified").length,
+      },
+    ],
+    [sources],
   );
 
-  if (loading) {
-    return (
-      <MainScreenWrapper>
-        <ScreenHeader title="Overview" description="Everything about this project's knowledge base, at a glance." />
-        <LoadingArea label="Loading overview" />
-      </MainScreenWrapper>
-    );
-  }
+  const ingestionSuccessCompute = useCallback(
+    (kbIds) => {
+      const finished = filterByScope(jobs, kbIds, "kbId").filter(
+        (j) => j.status === "succeeded" || j.status === "failed",
+      );
+      const succeeded = finished.filter((j) => j.status === "succeeded").length;
+      return {
+        pct: ratePct(succeeded, finished.length),
+        footnote: `${count(succeeded)} of ${count(finished.length)} Jobs Succeeded`,
+      };
+    },
+    [jobs],
+  );
 
+  const answerRateCompute = useCallback(
+    (pipelineIds) => {
+      const scoped = filterByScope(logs, pipelineIds, "pipelineId");
+      const answered = scoped.filter((l) => l.status === "ok").length;
+      return {
+        pct: ratePct(answered, scoped.length),
+        footnote: `${count(answered)} of ${count(scoped.length)} Queries Answered`,
+      };
+    },
+    [logs],
+  );
+
+  const attentionItems = useMemo(() => {
+    const failed = sources.filter((s) => s.status === "failed");
+    const failedKbs = new Set(failed.map((s) => s.kbId)).size;
+    const providerErrors = providers.filter((p) => p.status === "error").length;
+    const open = feedback.filter((m) => !m.metadata?.resolved);
+    const unanswered = open.filter((m) => m.unanswered).length;
+    const unhelpful = open.filter((m) => m.feedback === "down").length;
+    const freshness = sources.map(freshnessOf);
+    const stale = freshness.filter((f) => f === "stale").length;
+    const reviewDue = stale + freshness.filter((f) => f === "review_due").length;
+    const drafts = pipelines.filter((p) => p.status !== "live").length;
+
+    const item = (key, value, hint) => ({ key, ...ATTENTION_META[key], value: count(value), hint });
+    return [
+      item("failedSources", failed.length, failedKbs ? `Across ${plural(failedKbs, "knowledge base")}` : "Nothing failing"),
+      item("providerErrors", providerErrors, providerErrors ? "Last connection test failed" : "All connections healthy"),
+      item("unanswered", unanswered, "No grounded answer found"),
+      item("unhelpful", unhelpful, "Rated thumbs down, unresolved"),
+      item("reviewDue", reviewDue, stale ? `${count(stale)} past due` : "Due within 7 days"),
+      item("draftPipelines", drafts, "Not yet published live"),
+    ];
+  }, [sources, providers, feedback, pipelines]);
+
+  // No skeleton: the page lays out immediately with every figure at zero and
+  // fills in once the fetch lands. Widgets that would otherwise state "nothing
+  // here" get `pending` while the data is in flight so they don't jump to a verdict.
   return (
     <MainScreenWrapper>
-      <ScreenHeader
-        title="Overview"
-        description="Everything about this project's knowledge base, at a glance."
+      <div className="mt-2">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <div className="flex w-full items-center justify-center gap-3 text-center md:w-auto md:justify-start md:text-left">
+              <h1 className="text-2xl font-bold text-foreground dark:text-white tracking-tight">
+                Knowledge Overview
+              </h1>
+            </div>
+            <p className="mt-1 text-center text-sm text-muted-foreground md:text-left">
+              Track ingestion, queries, answer quality and spend across your knowledge bases.
+            </p>
+          </div>
+          <div className="w-full md:w-auto">
+            <div className="flex w-full md:w-auto md:gap-0">
+              {workspaceSummary.map((stat, i) => {
+                const last = i === workspaceSummary.length - 1;
+                return (
+                  <div
+                    key={stat.label}
+                    className={cn(
+                      "flex flex-1 flex-col items-center md:flex-none",
+                      i === 0 && "md:pr-8",
+                      i > 0 && "border-l border-border",
+                      i > 0 && !last && "md:px-8",
+                      last && i > 0 && "md:pl-8",
+                    )}
+                  >
+                    <span className="text-text-secondary text-[11px] uppercase tracking-wider font-medium">
+                      {stat.label}
+                    </span>
+                    <RollingNumber
+                      value={stat.value}
+                      className="mt-0.5 text-2xl font-bold text-foreground dark:text-white"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <StatsBar stats={stats} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 h-[360px]">
+          <ActivityTrendWidget pending={loading} asOf={asOf} pipelines={pipelines} logs={logs} />
+        </div>
+        <div className="h-[360px]">
+          <ChannelMixWidget pending={loading} logs={logs} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="h-[300px]">
+          <IngestionFunnelWidget
+            stages={funnelStages}
+            headlineKey="indexed"
+            headlineCaption="added → indexed"
+          />
+        </div>
+        <div className="h-[300px]">
+          <GaugeWidget
+            title="Ingestion Success"
+            subtitle="Jobs succeeded vs. finished."
+            caption="Succeeded"
+            scope={{
+              items: knowledgeBases,
+              icon: Database,
+              allLabel: "All Knowledge Bases",
+              noun: "knowledge base",
+            }}
+            compute={ingestionSuccessCompute}
+          />
+        </div>
+        <div className="h-[300px]">
+          <GaugeWidget
+            title="Answer Rate"
+            subtitle={`Answered vs. received, last ${TREND_WEEKS} weeks.`}
+            caption="Answered"
+            scope={{
+              items: pipelines,
+              icon: Workflow,
+              allLabel: "All Pipelines",
+              noun: "pipeline",
+            }}
+            compute={answerRateCompute}
+          />
+        </div>
+      </div>
+
+      <TopPipelinesTable
+        pending={loading}
+        asOf={asOf}
+        pipelines={pipelines}
+        knowledgeBases={knowledgeBases}
+        logs={logs}
       />
 
-      <StatGrid stats={stats} columns={5} />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <QuickAction canDo={canCreateKb} onClick={() => setTab("All Knowledge Bases")} icon={Plus} primary>
-          New knowledge base
-        </QuickAction>
-        <QuickAction canDo={canUploadSources} onClick={() => setTab("Sources")} icon={Upload}>
-          Upload sources
-        </QuickAction>
-        <QuickAction canDo={canUsePlayground} onClick={() => setTab("Chat")} icon={MessagesSquare}>
-          Open playground
-        </QuickAction>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SectionCard
-          title="Recent ingestion jobs"
-          action={
-            <Button variant="ghost" size="sm" onClick={() => setTab("Ingestion Jobs")}>
-              View all
-            </Button>
-          }
-          bodyPadding={false}
-        >
-          {recentJobs.length === 0 ? (
-            <EmptyState
-              icon={ListChecks}
-              title="No ingestion jobs yet"
-              description="Jobs appear here once you upload sources to a knowledge base."
-            />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border hover:bg-transparent">
-                  <TableHead className="px-4">Source</TableHead>
-                  <TableHead className="px-4">Knowledge base</TableHead>
-                  <TableHead className="px-4">Status</TableHead>
-                  <TableHead className="px-4 text-right">Created</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentJobs.map((job) => (
-                  <TableRow key={job.id} className="border-border">
-                    <TableCell className="px-4 py-3 text-sm text-foreground">
-                      {sourceById[job.sourceId]?.name || "—"}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-sm text-text-secondary">
-                      {kbById[job.kbId]?.name || "—"}
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <StatusPill status={job.status} map={JOB_STATUS_MAP} />
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-right text-xs text-text-tertiary">
-                      {job.createdAt ? formatRelative(new Date(job.createdAt)) : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </SectionCard>
-
-        <SectionCard
-          title="Recent conversations"
-          action={
-            <Button variant="ghost" size="sm" onClick={() => setTab("Conversations")}>
-              View all
-            </Button>
-          }
-          bodyPadding={false}
-        >
-          {recentConversations.length === 0 ? (
-            <EmptyState
-              icon={History}
-              title="No conversations yet"
-              description="Ask something in the Playground to start one."
-            />
-          ) : (
-            <Table>
-              <TableBody>
-                {recentConversations.map((c) => (
-                  <TableRow
-                    key={c.id}
-                    className="cursor-pointer border-border"
-                    onClick={() => openRecordInTab("Conversations", "conversation", c.id)}
-                  >
-                    <TableCell className="px-4 py-3">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {c.title || "Untitled conversation"}
-                      </p>
-                      <p className="text-xs text-text-tertiary">
-                        {pipelineById[c.pipelineId]?.name || "No pipeline"} · {c.channel}
-                      </p>
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-right text-xs text-text-tertiary">
-                      {c.createdAt ? formatRelative(new Date(c.createdAt)) : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </SectionCard>
-      </div>
-
-      <SectionCard
-        title="Setup checklist"
-        description="Get this project from empty to answering questions."
-      >
-        <ol className="divide-y divide-border">
-          {CHECKLIST.map((item) => {
-            const done = checklistState[item.key];
-            const Icon = done ? CheckCircle2 : Circle;
-            return (
-              <li key={item.key} className="flex items-center justify-between gap-3 py-3">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <Icon className="h-4 w-4 shrink-0 text-text-tertiary" />
-                  <span className={done ? "text-sm text-text-secondary line-through" : "text-sm text-foreground"}>
-                    {item.label}
-                  </span>
-                </div>
-                {done ? (
-                  <Badge variant="success">Done</Badge>
-                ) : (
-                  <Button variant="ghost" size="sm" onClick={() => setTab(item.tab)}>
-                    Go
-                  </Button>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </SectionCard>
+      <AttentionCard items={attentionItems} />
     </MainScreenWrapper>
   );
 }
