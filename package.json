@@ -21,7 +21,7 @@
     "@ai-sdk/google": "4.0.99",
     "@ai-sdk/openai": "4.0.96",
     "@ai-sdk/openai-compatible": "3.0.71",
-    "@geiger/notify": "file:../geiger-notify",
+    "@geiger/notify": "github:bhargavjoshi1237/geiger-notify#f4e675545a7b11d2ac4a2b8a3ee238edea0ba2d3",
     "@geiger/orm": "github:bhargavjoshi1237/geiger-orm#master",
     "@geiger/rbac": "github:bhargavjoshi1237/geiger-rbac#1835de3735cf9c86df5adebdbc7458dd4302e40d",
     "@geiger/ui": "github:bhargavjoshi1237/geiger-ui#258dd6aa93dbf55262eb37055fcc5ef61da24a5b",
