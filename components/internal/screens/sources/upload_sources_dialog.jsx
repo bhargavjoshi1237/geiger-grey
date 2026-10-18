@@ -32,8 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@geiger/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@geiger/ui";
-import { Field, EmptyState } from "@/components/internal/shared/screen_kit";
+import { Field, EmptyState, SegmentedTabs } from "@/components/internal/shared/screen_kit";
 import { Dropzone } from "@/components/internal/shared/dropzone";
 import { listKnowledgeBases } from "@/lib/supabase/knowledge_bases";
 import { listPresets } from "@/lib/supabase/ingestion_presets";
@@ -44,6 +43,12 @@ import { analyzeFile } from "@/lib/grey/file_analysis";
 import { estimateFileCost, estimateTotal } from "@/lib/grey/cost";
 import { formatBytes, formatCurrency, formatDuration } from "@/lib/grey/format";
 import { SOURCE_KIND_ICONS, SOURCE_KIND_LABELS, buildQueuedJob, effectivePreset } from "./constants";
+
+const ADD_SOURCE_TABS = [
+  { label: "Upload", value: "upload", icon: Upload },
+  { label: "Import", value: "import", icon: Package },
+  { label: "Add URL", value: "url", icon: Globe },
+];
 
 function kindFromMime(mime) {
   if (!mime) return "document";
@@ -433,131 +438,127 @@ export function UploadSourcesDialog({ open, onOpenChange, projectId, defaultKbId
           </Field>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1">
-          <TabsList className="w-full">
-            <TabsTrigger value="upload" className="flex-1">
-              <Upload className="h-4 w-4" /> Upload
-            </TabsTrigger>
-            <TabsTrigger value="import" className="flex-1">
-              <Package className="h-4 w-4" /> Import
-            </TabsTrigger>
-            <TabsTrigger value="url" className="flex-1">
-              <Globe className="h-4 w-4" /> Add URL
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <SegmentedTabs tabs={ADD_SOURCE_TABS} value={tab} onChange={setTab} fullWidth />
 
-          <TabsContent value="upload" className="scrollbar-subtle mt-3 max-h-[46vh] space-y-3 overflow-y-auto">
-            <Dropzone
-              onFiles={addFiles}
-              hint="PDF, images, audio, video, text, or office documents."
-            />
-
-            {files.length ? (
-              <div className="space-y-2">
-                {files.map((entry) => {
-                  const Icon = entry.analysis
-                    ? SOURCE_KIND_ICONS[entry.analysis.kind] || FileStack
-                    : entry.analysisError
-                      ? AlertTriangle
-                      : Loader2;
-                  const estimate = entry.analysis && preset ? estimateFileCost(fileAnalysisShape(entry.analysis), preset) : null;
-                  return (
-                    <div
-                      key={entry.id}
-                      className="flex items-center gap-3 rounded-lg border border-border bg-surface-card px-3 py-2"
-                    >
-                      <Icon
-                        className={`h-4 w-4 shrink-0 ${entry.analysisError ? "text-destructive-text" : "text-text-secondary"} ${
-                          !entry.analysis && !entry.analysisError ? "animate-spin" : ""
-                        }`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">{entry.file.name}</p>
-                        <p className="text-xs text-text-tertiary">
-                          {formatBytes(entry.file.size)}
-                          {entry.analysis
-                            ? ` · ${SOURCE_KIND_LABELS[entry.analysis.kind] || entry.analysis.kind}${
-                                entry.analysis.pageCount
-                                  ? ` · ${entry.analysis.pageCount} pages`
-                                  : entry.analysis.durationMs
-                                    ? ` · ${formatDuration(entry.analysis.durationMs)}`
-                                    : ""
-                              }`
-                            : entry.analysisError
-                              ? " · Couldn't analyze"
-                              : " · Analyzing…"}
-                        </p>
-                        {entry.progress > 0 && entry.progress < 100 ? (
-                          <Progress value={entry.progress} className="mt-1.5 h-1" />
-                        ) : null}
-                      </div>
-                      <span className="shrink-0 text-xs font-medium text-foreground tabular-nums">
-                        {estimate ? estimateLabel(estimate, preset?.tier) : "—"}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Remove ${entry.file.name}`}
-                        onClick={() => removeFile(entry.id)}
-                        className="text-text-secondary hover:bg-surface-active hover:text-foreground"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {totalEstimate ? (
-              <div className="flex items-center justify-between rounded-lg border border-border bg-surface-card px-3 py-2.5 text-sm">
-                <span className="text-text-secondary">Estimated ingestion cost</span>
-                <span className="font-semibold text-foreground">
-                  {estimateLabel(totalEstimate, preset?.tier)}
-                </span>
-              </div>
-            ) : null}
-          </TabsContent>
-
-          <TabsContent value="import" className="scrollbar-subtle mt-3 max-h-[46vh] space-y-4 overflow-y-auto">
-            {importLoading ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-sm text-text-secondary">
-                <Loader2 className="h-4 w-4 animate-spin" /> Looking for importable items…
-              </div>
-            ) : (
-              <>
-                <ImportSection
-                  icon={Package}
-                  title="Assets"
-                  items={importAssets ?? []}
-                  prefix="asset"
-                  selected={selectedImport}
-                  onToggle={toggleImportSelection}
-                  emptyLabel="No importable assets found."
-                />
-                <ImportSection
-                  icon={StickyNote}
-                  title="Notes"
-                  items={importNotes ?? []}
-                  prefix="note"
-                  selected={selectedImport}
-                  onToggle={toggleImportSelection}
-                  emptyLabel="No importable notes found."
-                />
-              </>
-            )}
-          </TabsContent>
-
-          <TabsContent value="url" className="mt-3 space-y-3">
-            <Field label="URL" hint="Grey fetches the page and indexes its main content.">
-              <Input
-                value={urlValue}
-                onChange={(e) => setUrlValue(e.target.value)}
-                placeholder="https://example.com/article"
+          {tab === "upload" ? (
+            <div className="scrollbar-subtle max-h-[46vh] space-y-3 overflow-y-auto">
+              <Dropzone
+                onFiles={addFiles}
+                hint="PDF, images, audio, video, text, or office documents."
               />
-            </Field>
-          </TabsContent>
-        </Tabs>
+
+              {files.length ? (
+                <div className="space-y-2">
+                  {files.map((entry) => {
+                    const Icon = entry.analysis
+                      ? SOURCE_KIND_ICONS[entry.analysis.kind] || FileStack
+                      : entry.analysisError
+                        ? AlertTriangle
+                        : Loader2;
+                    const estimate = entry.analysis && preset ? estimateFileCost(fileAnalysisShape(entry.analysis), preset) : null;
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-3 rounded-lg border border-border bg-surface-card px-3 py-2"
+                      >
+                        <Icon
+                          className={`h-4 w-4 shrink-0 ${entry.analysisError ? "text-destructive-text" : "text-text-secondary"} ${
+                            !entry.analysis && !entry.analysisError ? "animate-spin" : ""
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-foreground">{entry.file.name}</p>
+                          <p className="text-xs text-text-tertiary">
+                            {formatBytes(entry.file.size)}
+                            {entry.analysis
+                              ? ` · ${SOURCE_KIND_LABELS[entry.analysis.kind] || entry.analysis.kind}${
+                                  entry.analysis.pageCount
+                                    ? ` · ${entry.analysis.pageCount} pages`
+                                    : entry.analysis.durationMs
+                                      ? ` · ${formatDuration(entry.analysis.durationMs)}`
+                                      : ""
+                                }`
+                              : entry.analysisError
+                                ? " · Couldn't analyze"
+                                : " · Analyzing…"}
+                          </p>
+                          {entry.progress > 0 && entry.progress < 100 ? (
+                            <Progress value={entry.progress} className="mt-1.5 h-1" />
+                          ) : null}
+                        </div>
+                        <span className="shrink-0 text-xs font-medium text-foreground tabular-nums">
+                          {estimate ? estimateLabel(estimate, preset?.tier) : "—"}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove ${entry.file.name}`}
+                          onClick={() => removeFile(entry.id)}
+                          className="text-text-secondary hover:bg-surface-active hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {totalEstimate ? (
+                <div className="flex items-center justify-between rounded-lg border border-border bg-surface-card px-3 py-2.5 text-sm">
+                  <span className="text-text-secondary">Estimated ingestion cost</span>
+                  <span className="font-semibold text-foreground">
+                    {estimateLabel(totalEstimate, preset?.tier)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {tab === "import" ? (
+            <div className="scrollbar-subtle max-h-[46vh] space-y-4 overflow-y-auto">
+              {importLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-text-secondary">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Looking for importable items…
+                </div>
+              ) : (
+                <>
+                  <ImportSection
+                    icon={Package}
+                    title="Assets"
+                    items={importAssets ?? []}
+                    prefix="asset"
+                    selected={selectedImport}
+                    onToggle={toggleImportSelection}
+                    emptyLabel="No importable assets found."
+                  />
+                  <ImportSection
+                    icon={StickyNote}
+                    title="Notes"
+                    items={importNotes ?? []}
+                    prefix="note"
+                    selected={selectedImport}
+                    onToggle={toggleImportSelection}
+                    emptyLabel="No importable notes found."
+                  />
+                </>
+              )}
+            </div>
+          ) : null}
+
+          {tab === "url" ? (
+            <div className="space-y-3">
+              <Field label="URL" hint="Grey fetches the page and indexes its main content.">
+                <Input
+                  value={urlValue}
+                  onChange={(e) => setUrlValue(e.target.value)}
+                  placeholder="https://example.com/article"
+                />
+              </Field>
+            </div>
+          ) : null}
+        </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
