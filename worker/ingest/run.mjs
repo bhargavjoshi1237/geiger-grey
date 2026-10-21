@@ -1,6 +1,9 @@
 // One ingestion job, end to end (spec §5.4–5.5, §6, §9, §10.3, §11):
-//   fetch -> parse (cached) | transcribe (cached) -> chunk -> enrich -> embed (staged rows)
-//   -> swap_source_chunks -> source update -> graph extraction -> orphan sweep -> release
+//   fetch -> parse (cached) | transcribe (cached) | image (caption cached) -> chunk -> enrich
+//   -> embed (staged rows) -> swap_source_chunks -> source update -> graph extraction
+//   -> orphan sweep -> release
+// Images (worker/ingest/image.mjs) become one image chunk: embedded from the pixels when the
+// KB's model is multimodal, otherwise from the vision caption.
 // Progress bands: parse 0–30, chunk/enrich 30–60, embed 60–90, graph 90–100.
 // Every job write is guarded on the lease; cancellation, lease loss and shutdown arrive through
 // `signal` (aborted by the loop's heartbeat) and are also checked at each stage boundary.
@@ -25,9 +28,12 @@ import { resolveEmbeddingSpec, toPgVector } from "../../lib/grey/embedding_model
 import { driverFormat } from "../../lib/grey/provider_kinds.js";
 import { chunkTranscript } from "../../lib/grey/chunk_transcript.js";
 import { routeDocument } from "../../lib/grey/ocr_routing.js";
-import { embedTexts } from "../../lib/engine/embeddings.js";
+import { sniffImageType } from "../../lib/grey/image_input.js";
+import { embedImages, embedTexts, kbImageSupport } from "../../lib/engine/embeddings.js";
 import { isEngineError } from "../../lib/engine/errors.js";
+import { normalizeImage } from "../../lib/engine/image.js";
 import { getProcessingModel } from "../../lib/engine/llm.js";
+import { describeImage } from "../../lib/engine/vision.js";
 import { NO_TRANSCRIPTION_PROVIDER, resolveTranscriptionConnection, transcribe } from "../../lib/engine/transcribe.js";
 import { loadProvider } from "../../lib/engine/secrets.js";
 import { extractGraph, sweepGraphOrphans } from "../../lib/engine/graph_extract.js";
@@ -36,6 +42,7 @@ import { assertSupported, detectFormat, engineFor, engineVersion, parseDocument,
 import { downloadToFile, fetchSourceFile, MAX_MEDIA_DOWNLOAD_BYTES, mediaFileUrl, sourceFileUrl } from "./fetch.mjs";
 import { readCache, writeCache } from "./cache.mjs";
 import { recordJobUsage } from "./billing.mjs";
+import { isImageSource, prepareImage, uploadThumbnail } from "./image.mjs";
 
 const EMBED_BATCH = 128;
 const TRANSCRIPT_REVISION = 1;
@@ -43,6 +50,11 @@ const TRANSCRIPT_REVISION = 1;
 export const DEFAULT_DEPS = {
   db: dbModule,
   embedTexts,
+  embedImages,
+  kbImageSupport,
+  describeImage,
+  normalizeImage,
+  uploadThumbnail,
   transcribe,
   resolveTranscriptionConnection,
   loadProvider,
@@ -153,23 +165,22 @@ export async function runIngestionJob(job, ctx) {
       return null;
     }
   };
+  // What the image branch (./image.mjs) needs from this job.
+  const imageStage = { deps, admin, pool, config, signal, ids, tempDir, throwIfAborted, checkpoint, record, warn, log, meta };
 
   // ---------------------------------------------------------------------------
   // Documents: fetch -> parse (cached) -> chunk
   // ---------------------------------------------------------------------------
-  async function prepareDocument(source, preset, tier, title) {
-    // Image sources can't be parsed without OCR — fail before downloading them.
-    const declared = detectFormat({ mime: source.mime, name: source.name, origin: source.origin, kind: source.kind });
-    if (declared === "image") {
-      const early = routeDocument({ parser: preset.parser || "text", format: "image", ocrAvailable: Boolean(config.ocrUrl) });
-      if (early.error) throw new JobError(early.error.code, early.error.message);
-    }
+  async function prepareDocument(source, kb, preset, tier, title) {
     const dir = await tempDir();
     const fetched = await deps.fetchSourceFile({ source, admin, db: pool, config, tmpDir: dir, signal });
     throwIfAborted();
     const head = fetched.filePath ? await readHead(fetched.filePath) : null;
-    const format = detectFormat({ mime: fetched.mime || source.mime, name: fetched.name || source.name, origin: source.origin, kind: source.kind, head });
-    if (format !== "image") assertSupported(format);
+    let format = detectFormat({ mime: fetched.mime || source.mime, name: fetched.name || source.name, origin: source.origin, kind: source.kind, head });
+    if (format === "unknown" && head && sniffImageType(head)) format = "image";
+    // A URL or asset that turned out to be an image goes through the image branch.
+    if (format === "image") return prepareImage(imageStage, { source, kb, preset, tier, title, fetched });
+    assertSupported(format);
     const parser = preset.parser || "text";
     const routing = routeDocument({ parser, format: routingFormat(format), ocrAvailable: Boolean(config.ocrUrl) });
     if (routing.error) throw new JobError(routing.error.code, routing.error.message);
@@ -391,13 +402,19 @@ export async function runIngestionJob(job, ctx) {
     }
 
     const title = displayTitle(source.name);
-    const contextual = Boolean(preset.enrichment?.contextual);
-    const processing = contextual ? await db.processingModelSettings(pool, projectId) : null;
     const spec = resolveEmbeddingSpec(kb) || {};
     const embeddingModel = spec.model || kb.embedding_model;
 
     const isMedia = source.kind === "audio" || source.kind === "video" || /^(audio|video)\//i.test(source.mime || "");
-    const prepared = isMedia ? await prepareMedia(source, preset, tier, title) : await prepareDocument(source, preset, tier, title);
+    const prepared = isMedia
+      ? await prepareMedia(source, preset, tier, title)
+      : isImageSource(source)
+        ? await prepareImage(imageStage, { source, kb, preset, tier, title })
+        : await prepareDocument(source, kb, preset, tier, title);
+    // An image is one chunk that is its own document: there is nothing to situate it in.
+    const isImage = prepared.engine === "image";
+    const contextual = Boolean(preset.enrichment?.contextual) && !isImage;
+    const processing = contextual ? await db.processingModelSettings(pool, projectId) : null;
 
     const ck = chunkKey({
       parseKey: prepared.parseKey,
@@ -424,7 +441,7 @@ export async function runIngestionJob(job, ctx) {
         pageCount: prepared.pageCount,
         durationMs: prepared.durationMs,
         contentHash: prepared.contentHash,
-        ingest: { ...source.metadata.ingest, jobId: job.id, at: new Date().toISOString() },
+        ingest: { ...source.metadata.ingest, ...(prepared.image ? { image: prepared.image } : {}), jobId: job.id, at: new Date().toISOString() },
       });
       await graphStage(source, preset, { reused: true });
       return { source, preset, tier, prepared, tokenCount: live.tokens };
@@ -432,7 +449,7 @@ export async function runIngestionJob(job, ctx) {
 
     // A retry whose chunking changed can't reuse what the last attempt staged.
     if (job.metadata?.chunkKey && job.metadata.chunkKey !== ck) await db.deleteStagedChunks(pool, job.id);
-    await checkpoint("chunk", 30, { chunkKey: ck });
+    await checkpoint("chunk", 30, { chunkKey: ck, substage: null });
 
     const staged = await db.stagedOrdinals(pool, job.id);
     const todo = prepared.chunks.filter((c) => !staged.has(c.ordinal));
@@ -455,19 +472,18 @@ export async function runIngestionJob(job, ctx) {
       await record(byokUsage("contextual_tokens", out.tokens, out.model ? { model: out.model } : {}));
     }
 
+    // A multimodal KB embeds the image itself (an image source is a single chunk).
+    const embedBatch = (batch) =>
+      prepared.pixels
+        ? deps.embedImages({ admin, projectId, kb, images: batch.map(() => prepared.pixels), inputType: "document", signal })
+        : deps.embedTexts({ admin, projectId, kb, texts: batch.map((c) => c.search_text || c.content), inputType: "document", signal });
+
     await checkpoint("embed", 60);
     let done = prepared.chunks.length - todo.length;
     let embedTokens = 0;
     for (let i = 0; i < todo.length; i += EMBED_BATCH) {
       const batch = todo.slice(i, i + EMBED_BATCH);
-      const { vectors, tokens } = await deps.embedTexts({
-        admin,
-        projectId,
-        kb,
-        texts: batch.map((c) => c.search_text || c.content),
-        inputType: "document",
-        signal,
-      });
+      const { vectors, tokens } = await embedBatch(batch);
       throwIfAborted();
       embedTokens += Number(tokens) || 0;
       await db.insertStagedChunks(pool, {
@@ -480,7 +496,7 @@ export async function runIngestionJob(job, ctx) {
           // embedding and embedding_dims are written together (chunks_embedding_dims_check)
           embedding: toPgVector(vectors[k]),
           embedding_dims: vectors[k].length,
-          embedding_model: embeddingModel,
+          embedding_model: prepared.embeddingModel || embeddingModel,
         })),
       });
       done += batch.length;
@@ -498,7 +514,15 @@ export async function runIngestionJob(job, ctx) {
       pageCount: prepared.pageCount,
       durationMs: prepared.durationMs,
       contentHash: prepared.contentHash,
-      ingest: { chunkKey: ck, parseKey: prepared.parseKey, jobId: job.id, engine: prepared.engine, strategy: prepared.strategy, at: new Date().toISOString() },
+      ingest: {
+        chunkKey: ck,
+        parseKey: prepared.parseKey,
+        jobId: job.id,
+        engine: prepared.engine,
+        strategy: prepared.strategy,
+        ...(prepared.image ? { image: prepared.image } : {}),
+        at: new Date().toISOString(),
+      },
     });
     meta.chunks = liveCount;
     meta.tokens = tokenCount;

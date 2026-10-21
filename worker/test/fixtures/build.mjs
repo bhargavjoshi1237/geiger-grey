@@ -1,8 +1,9 @@
 // Tiny document fixtures built in memory for the parser tests — no binaries in the repo.
 // A minimal ZIP writer (stored entries) is enough for DOCX/PPTX; XLSX comes from exceljs;
-// the PDF is assembled by hand with a correct xref table.
+// the PDF is assembled by hand with a correct xref table; images come from sharp.
 import { crc32 } from "node:zlib";
 import ExcelJS from "exceljs";
+import sharp from "sharp";
 
 const enc = new TextEncoder();
 const xml = (s) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${s}`;
@@ -159,3 +160,9 @@ export const HTML_FIXTURE = `<!doctype html><html><head><title>Release notes</ti
 <p><img src="data:image/png;base64,AAAA" alt="Diagram of the index"></p>
 <script>alert(1)</script></article>
 <footer>Copyright</footer></body></html>`;
+
+// A real PNG with a little structure (two colour bands), for the image branch.
+export async function buildPng({ width = 64, height = 48 } = {}) {
+  const top = { input: { create: { width, height: Math.ceil(height / 2), channels: 3, background: "#1f4e79" } }, top: 0, left: 0 };
+  return sharp({ create: { width, height, channels: 3, background: "#f2c14e" } }).composite([top]).png().toBuffer();
+}

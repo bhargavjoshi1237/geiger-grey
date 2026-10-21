@@ -1,10 +1,10 @@
-// worker/db.mjs TLS configuration (WORKER_DATABASE_CA).
+// worker/db.mjs TLS configuration (WORKER_DATABASE_CA) and statement shapes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { poolConfig, readCa } from "../db.mjs";
+import { insertStagedChunks, poolConfig, readCa } from "../db.mjs";
 
 const REMOTE = "postgresql://u:p@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require";
 const PEM = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----\n";
@@ -34,4 +34,21 @@ test("without a CA, TLS stays on but unverified; local databases skip TLS", () =
   assert.deepEqual(poolConfig(REMOTE, { ca: "" }).ssl, { rejectUnauthorized: false });
   assert.equal(poolConfig("postgresql://u:p@localhost:54322/postgres", { ca: PEM }).ssl, false);
   assert.equal(readCa(undefined), null);
+});
+
+test("staged chunks write modality: image for image chunks, text for everything else", async () => {
+  const queries = [];
+  const db = { query: async (sql, values) => (queries.push({ sql, values }), { rowCount: 2 }) };
+  const rows = [
+    { ordinal: 0, content: "A pump.", modality: "image", metadata: { image: { dhash: "0" } }, embedding: "[1]", embedding_dims: 1, embedding_model: "m" },
+    { ordinal: 1, content: "Text.", embedding: "[1]", embedding_dims: 1, embedding_model: "m" },
+  ];
+  assert.equal(await insertStagedChunks(db, { projectId: "p1", kbId: "k1", sourceId: "s1", jobId: "j1", rows }), 2);
+  const [{ sql, values }] = queries;
+  const columns = /insert into grey\.chunks \(([^)]+)\)/.exec(sql)[1].split(", ");
+  assert.equal(columns.at(-1), "modality");
+  assert.equal(values.length, columns.length * 2);
+  assert.equal(values[columns.length - 1], "image");
+  assert.equal(values[columns.length * 2 - 1], "text");
+  assert.match(sql, /on conflict \(job_id, ordinal\) where state = 'staged' do nothing/);
 });

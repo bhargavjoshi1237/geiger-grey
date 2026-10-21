@@ -225,10 +225,12 @@ const CHUNK_COLUMNS = [
   "embedding",
   "embedding_dims",
   "embedding_model",
+  "modality",
 ];
 const CHUNK_CASTS = { heading_path: "::text[]", metadata: "::jsonb", embedding: "::public.halfvec" };
 
-// rows: [{ ordinal, content, token_count, page, start_ms, end_ms, heading_path, metadata, search_text, embedding /* pg vector string */, embedding_dims, embedding_model }]
+// rows: [{ ordinal, content, token_count, page, start_ms, end_ms, heading_path, metadata, search_text, embedding /* pg vector string */, embedding_dims, embedding_model, modality? }]
+// modality: 'image' for an image source's chunk, 'text' (the default) for everything else.
 // Re-inserting an ordinal that is already staged for this job is a no-op (retry-safe).
 export async function insertStagedChunks(db, { projectId, kbId, sourceId, jobId, rows }) {
   if (!rows.length) return 0;
@@ -252,6 +254,7 @@ export async function insertStagedChunks(db, { projectId, kbId, sourceId, jobId,
       embedding: row.embedding ?? null,
       embedding_dims: row.embedding_dims ?? null,
       embedding_model: row.embedding_model ?? null,
+      modality: row.modality || "text",
     };
     const placeholders = CHUNK_COLUMNS.map((column) => {
       values.push(record[column]);

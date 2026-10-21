@@ -7,6 +7,7 @@ export default defineNavConfig({
   dependencies: [
     { screen: "Knowledge Graph", requires: ["Knowledge Bases"], reason: "The graph is extracted from knowledge base sources." },
     { screen: "Playground", requires: ["Pipelines"], reason: "Chat runs through a pipeline." },
+    { screen: "Tools", requires: ["Knowledge Bases"], reason: "Tools search knowledge base sources." },
     { screen: "Evaluations", requires: ["Pipelines"], reason: "Evaluations score a pipeline version." },
     { screen: "Request Logs", requires: ["Pipelines"] },
     { screen: "MCP Servers", requires: ["API Keys"], reason: "MCP clients authenticate with an API key." },

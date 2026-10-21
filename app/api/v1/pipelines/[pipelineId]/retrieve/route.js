@@ -111,8 +111,10 @@ export const POST = handleApi(async (request, { params }) => {
     }
     settle({ status: "ok", turn: { retrieved: search.chunks, retrievalMeta: search.meta }, billed: true });
 
+    // `image` carries internal storage paths (thumbnails); public callers get modality/sourceKind only.
+    const chunks = search.chunks.map(({ image: _image, ...chunk }) => chunk);
     return Response.json(
-      { object: "retrieval", pipelineId, version: config.version, query: input.query, chunks: search.chunks },
+      { object: "retrieval", pipelineId, version: config.version, query: input.query, chunks },
       { headers },
     );
   } catch (error) {

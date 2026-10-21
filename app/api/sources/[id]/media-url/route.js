@@ -1,6 +1,8 @@
 import { handle, json, ApiError } from "@/lib/server/errors";
 import { authenticate, authorize, isUuid } from "@/lib/server/auth";
 import { adminClient } from "@/lib/supabase/admin";
+import { inProjectFolder, signStoragePaths } from "@/lib/engine/media";
+import { thumbnailPath } from "@/lib/grey/image_input";
 
 export const runtime = "nodejs";
 
@@ -12,14 +14,9 @@ const NOT_FOUND = "Source not found.";
 const FILE_MISSING = "This source's media file isn't available.";
 const ASSET_MISSING = "This asset's file isn't available in Assets.";
 
-// Uploads live at <project_id>/<kb_id>/<source_id>/<file>. storage_path is member-writable, so a
-// path outside the source's own project folder is never signed (the service role could sign any object).
-function inProjectFolder(storagePath, projectId) {
-  return typeof storagePath === "string" && Boolean(projectId)
-    && storagePath.startsWith(`${projectId}/`) && !/(^|\/)\.\.?(\/|$)/.test(storagePath);
-}
-
-// 1 h signed URL for an uploaded source's file in grey-sources.
+// 1 h signed URL for an uploaded source's file in grey-sources. storage_path is member-writable,
+// so a path outside the source's own project folder is never signed (the service role could sign
+// any object).
 async function uploadMediaUrl(admin, source) {
   if (!source.storage_path) throw new ApiError("not_found", 404, FILE_MISSING);
   if (!inProjectFolder(source.storage_path, source.project_id)) {
@@ -63,6 +60,31 @@ async function assetMediaUrl(source) {
   return { url: body.url, mimeType: body.mimeType || source.mime || null };
 }
 
+const originalUrl = (admin, source) =>
+  source.origin === "assets" ? assetMediaUrl(source) : uploadMediaUrl(admin, source);
+
+// Image sources: the original plus the worker's thumbnail. The thumbnail path is derived from the
+// row's own ids (never from member-written fields). Either may be missing (URL-origin images have
+// no stored original; a failed upload has no thumbnail) — only both missing is a 404.
+async function imageUrls(admin, source) {
+  const thumbPath = thumbnailPath({ projectId: source.project_id, kbId: source.kb_id, sourceId: source.id });
+  const [original, thumbnails] = await Promise.all([
+    originalUrl(admin, source).catch((error) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }),
+    signStoragePaths({ admin, projectId: source.project_id, paths: [thumbPath], seconds: SIGNED_URL_SECONDS }),
+  ]);
+  const thumbnailUrl = thumbnails.get(thumbPath) ?? null;
+  if (!original && !thumbnailUrl) throw new ApiError("not_found", 404, FILE_MISSING);
+  return {
+    url: original?.url ?? null,
+    thumbnailUrl,
+    mimeType: original?.mimeType ?? source.mime ?? null,
+    kind: "image",
+  };
+}
+
 export const GET = handle(async (request, { params }) => {
   const { id } = await params;
   const user = await authenticate(request); // auth before any DB read, to avoid an existence leak
@@ -73,7 +95,7 @@ export const GET = handle(async (request, { params }) => {
   if (!admin) throw new ApiError("service_unavailable", 503, "The service is unavailable.");
 
   const { data: source, error } = await admin.from("sources")
-    .select("id,project_id,kind,origin,origin_ref,mime,storage_path")
+    .select("id,project_id,kb_id,kind,origin,origin_ref,mime,storage_path")
     .eq("id", id).is("deleted_at", null).maybeSingle();
   if (error) {
     console.error("[api.sources.media-url.load]", error);
@@ -87,10 +109,10 @@ export const GET = handle(async (request, { params }) => {
     notFoundOnDenied: true, notFoundMessage: NOT_FOUND,
   });
 
+  if (source.kind === "image") return json(await imageUrls(admin, source));
   if (!MEDIA_KINDS.has(source.kind)) {
-    throw new ApiError("not_media", 422, "This source has no audio or video to play.");
+    throw new ApiError("not_media", 422, "This source has no image, audio or video to show.");
   }
 
-  const media = source.origin === "assets" ? await assetMediaUrl(source) : await uploadMediaUrl(admin, source);
-  return json(media);
+  return json(await originalUrl(admin, source));
 });

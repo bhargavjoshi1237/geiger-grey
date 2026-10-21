@@ -27,8 +27,8 @@ import { Field } from "@/components/internal/shared/screen_kit";
 import { ModelIdSelect } from "@/components/internal/shared/model_id_select";
 import { useProject } from "@/context/project-context";
 import { useWorkspaceUrl } from "@/lib/hooks/use-workspace-url";
-import { hasCapability, suggestedModelsFor } from "@/lib/grey/provider_kinds";
-import { isIndexedDims } from "@/lib/grey/embedding_models";
+import { driverFormat, hasCapability, suggestedModelsFor } from "@/lib/grey/provider_kinds";
+import { isIndexedDims, modelSupportsImages } from "@/lib/grey/embedding_models";
 import { listProviders } from "@/lib/supabase/model_providers";
 import { detectEmbeddingDims } from "@/lib/supabase/knowledge_bases";
 import { EMBEDDING_ERROR_MESSAGES } from "./constants";
@@ -76,6 +76,9 @@ export function CreateKnowledgeBaseDialog({ open, onOpenChange, onCreate, preset
 
   const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
   const selectedProvider = (providers || []).find((p) => p.id === draft.embeddingProviderId) || null;
+  const embedsImages =
+    !!selectedProvider &&
+    modelSupportsImages(driverFormat(selectedProvider, "embed"), draft.embeddingModel.trim(), draft.embeddingDims);
 
   const reset = () => setDraft({ ...EMPTY_DRAFT, presetId: presets[0]?.id || "" });
 
@@ -231,7 +234,11 @@ export function CreateKnowledgeBaseDialog({ open, onOpenChange, onCreate, preset
 
           {selectedProvider ? (
             <>
-              <Field label="Embedding model" htmlFor="kb-embedding-model">
+              <Field
+                label="Embedding model"
+                htmlFor="kb-embedding-model"
+                hint={embedsImages ? "Embeds images too — image sources get visual search." : null}
+              >
                 <ModelIdSelect
                   key={selectedProvider.id}
                   inputId="kb-embedding-model"
