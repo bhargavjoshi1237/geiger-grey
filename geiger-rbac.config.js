@@ -17,6 +17,7 @@ export const NAV_SECTIONS = [
   "Knowledge Bases",
   "Knowledge Graph",
   "Playground",
+  "Tools",
   "Pipelines",
   "Delivery",
   "Quality",
@@ -39,6 +40,9 @@ const actionPermissions = [
 
   { key: "grey.graph.edit", label: "Edit the knowledge graph", group: "Graph" },
   { key: "grey.ontology.manage", label: "Manage the ontology", group: "Graph" },
+
+  { key: "grey.tool.manage", label: "Build and edit tools", group: "Tools" },
+  { key: "grey.tool.publish", label: "Publish tools", group: "Tools" },
 
   { key: "grey.pipeline.manage", label: "Manage pipelines", group: "Pipelines & delivery" },
   { key: "grey.pipeline.publish", label: "Publish pipelines", group: "Pipelines & delivery" },
@@ -96,6 +100,8 @@ const systemRoles = [
       "grey.ontology.manage",
       "grey.pipeline.manage",
       "grey.pipeline.publish",
+      "grey.tool.manage",
+      "grey.tool.publish",
       "grey.eval.manage",
       "grey.export.run",
       "grey.team.invite",
