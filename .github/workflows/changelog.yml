@@ -1,0 +1,23 @@
+# Publishes a changelog entry for every push through the Geiger Dash changelog service, which reads
+# the commits from GitHub and writes the entry. Needs the CHANGELOG_INGEST_SECRET repo secret.
+# Add [skip changelog] to a commit message to leave that commit out.
+name: Changelog
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: changelog-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    uses: bhargavjoshi1237/geiger-dash/.github/workflows/changelog-service.yml@master
+    with:
+      product: geiger-grey
+    secrets:
+      CHANGELOG_INGEST_SECRET: ${{ secrets.CHANGELOG_INGEST_SECRET }}
