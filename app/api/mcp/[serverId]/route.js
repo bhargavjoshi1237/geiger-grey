@@ -1,9 +1,10 @@
 import { after } from "next/server";
 import { isUuid } from "@/lib/server/auth";
 import { ApiError } from "@/lib/server/errors";
-import { apiError, authenticateApiKey, handleApi, requireAdmin } from "@/lib/server/api_key_auth";
+import { apiError, authenticateApiKey, handleApi, rateLimitHit, requireAdmin } from "@/lib/server/api_key_auth";
 import { logDelivery } from "@/lib/server/delivery_log";
 import { createGreyMcpHandler } from "@/lib/server/mcp/server";
+import { recordToolRun } from "@/lib/engine/tool_runs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -23,7 +24,8 @@ async function loadServer(admin, serverId) {
 }
 
 // Bearer-authenticated (scope `mcp`; bound to the server's key when it has one), so no CORS.
-// A fresh stateless MCP handler serves each request; only tools/call is logged.
+// A fresh stateless MCP handler serves each request; only tools/call is logged. Lookup tool
+// calls also carry a `toolRun`, written to tool_runs (and metered) by recordToolRun.
 async function serve(request, { params }) {
   const { serverId } = await params;
   const admin = requireAdmin();
@@ -69,6 +71,9 @@ async function serve(request, { params }) {
         refId: server.id,
         metadata: { tool: call.tool, serverId: server.id },
       });
+      if (call.toolRun) {
+        await recordToolRun({ admin, projectId: server.project_id, channel: "mcp", apiKeyId: auth.key.id, ...call.toolRun });
+      }
     }
   });
 
@@ -78,6 +83,7 @@ async function serve(request, { params }) {
     server,
     signal: request.signal,
     record: (call) => calls.push({ latencyMs: Date.now() - startedAt, ...call }),
+    rateLimitHit,
   });
   const response = await handler.fetch(request);
 

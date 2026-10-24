@@ -5,7 +5,32 @@ import { generateApiKey, hashApiKey } from "@/lib/grey/api_keys";
 
 export const runtime = "nodejs";
 
-const ALLOWED_SCOPES = ["retrieve", "chat", "mcp"];
+const ALLOWED_SCOPES = ["retrieve", "chat", "mcp", "tools"];
+
+// toolIds for the "tools" scope: at least one, each a published tool of this project. Unlike
+// pipelineIds, an empty list would allow no tools, so the scope needs a pick.
+async function validateToolIds(admin, projectId, scopes, toolIds) {
+  if (!Array.isArray(toolIds) || !toolIds.every(isUuid)) {
+    throw new ApiError("invalid_input", 422, "toolIds must be valid ids.");
+  }
+  const ids = [...new Set(toolIds)];
+  if (!scopes.includes("tools")) {
+    if (ids.length) throw new ApiError("invalid_input", 422, "toolIds need the tools scope.");
+    return [];
+  }
+  if (!ids.length) throw new ApiError("invalid_input", 422, "Pick at least one tool for the tools scope.");
+  const { data: toolRows, error: toolError } = await admin.from("tools")
+    .select("id").eq("project_id", projectId).in("id", ids).eq("status", "live").is("deleted_at", null);
+  if (toolError) {
+    console.error("[api.api-keys.tools]", toolError);
+    throw new ApiError("service_unavailable", 503, "The service is unavailable.");
+  }
+  const liveIds = new Set((toolRows ?? []).map((row) => row.id));
+  if (!ids.every((toolId) => liveIds.has(toolId))) {
+    throw new ApiError("invalid_input", 422, "toolIds must be published tools in this project.");
+  }
+  return ids;
+}
 
 export const POST = handle(async (request) => {
   const body = await request.json().catch(() => null);
@@ -19,7 +44,7 @@ export const POST = handle(async (request) => {
 
   const scopes = body?.scopes === undefined ? ["retrieve", "chat"] : body.scopes;
   if (!Array.isArray(scopes) || !scopes.every((scope) => ALLOWED_SCOPES.includes(scope))) {
-    throw new ApiError("invalid_input", 422, "scopes must be a subset of retrieve, chat, mcp.");
+    throw new ApiError("invalid_input", 422, "scopes must be a subset of retrieve, chat, mcp, tools.");
   }
 
   const pipelineIds = body?.pipelineIds === undefined ? [] : body.pipelineIds;
@@ -38,6 +63,8 @@ export const POST = handle(async (request) => {
       throw new ApiError("invalid_input", 422, "pipelineIds must belong to this project.");
     }
   }
+
+  const toolIds = await validateToolIds(admin, projectId, scopes, body?.toolIds === undefined ? [] : body.toolIds);
 
   const rateLimitPerMin = body?.rateLimitPerMin === undefined ? 60 : body.rateLimitPerMin;
   if (!Number.isInteger(rateLimitPerMin) || rateLimitPerMin < 1 || rateLimitPerMin > 10000) {
@@ -63,6 +90,7 @@ export const POST = handle(async (request) => {
     key_hash: keyHash,
     scopes,
     pipeline_ids: pipelineIds,
+    tool_ids: toolIds,
     rate_limit_per_min: rateLimitPerMin,
     expires_at: expiresAt,
     created_by: user.id,
