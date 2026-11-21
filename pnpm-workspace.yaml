@@ -1,0 +1,4 @@
+allowBuilds:
+  msw: false
+  unrs-resolver: false
+nodeLinker: hoisted
